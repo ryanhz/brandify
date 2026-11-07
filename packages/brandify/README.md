@@ -88,6 +88,10 @@ void main() {
 
 Raw screenshots and a manifest land in `build/brandify/raw/<device>/<locale>/`.
 
+Each locale is its own `flutter test` run. brandify runs `flutter pub get` once, only when
+`pubspec.yaml` or `pubspec.lock` changed since the last one, and then runs every test with
+`--no-pub`, so a flaky network can't stall a capture halfway through.
+
 ### Framing
 
 ```bash
@@ -134,8 +138,10 @@ Copies the framed screenshots to where fastlane uploads them from, next to `bran
 | App Store | `fastlane/screenshots/<locale>/` (display class told apart by pixel size) | `deliver` |
 
 - **Names:** `{n}_{name}.png` in the order your test shot them (`1_home.png`, `2_add_task.png`;
-  `01_…` when a slot has 10), so both tools upload in that order. Several iOS devices in one
-  locale get a device prefix (`iphone69_1_home.png`, `ipad13_1_home.png`).
+  `01_…` when a slot has 10), so both tools upload in that order. When `brandify.yaml` has more
+  than one iOS device, App Store names get a device prefix (`iphone69_1_home.png`,
+  `ipad13_1_home.png`), whichever devices one export includes (`-d`), so names never change
+  between runs.
 - **Locales:** your BCP 47 tags are mapped to each store's code: `zh-Hans` → Play `zh-CN`,
   App Store `zh-Hans`; `ja-JP` → App Store `ja`; `he` → Play `iw-IL`; `es-MX` → Play `es-419`.
   brandify never guesses: a tag a store doesn't have (e.g. `de-AT`) is an error until you set it:
@@ -152,5 +158,22 @@ Copies the framed screenshots to where fastlane uploads them from, next to `bran
   each file is read back: exact slot size, the store's size rules, no alpha channel (both stores
   reject one; opaque RGBA is flattened), Play's 8 MB limit. Warnings for fewer than 2 Play phone
   screenshots, and for App Store sets without the required 6.9"/6.5" iPhone or 13" iPad class.
-- **Clean folders:** the screenshot folders being written are cleared of old images first (for the
-  App Store, only images of the display classes being written). Text metadata is never touched.
+- **Only its own files:** brandify records what it wrote, with a SHA-256 of each file, in
+  `fastlane/.brandify-export.json`; commit it along with the screenshots. On the next export it
+  replaces its own earlier set, so a dropped shot doesn't linger. Any other image fastlane would
+  upload with the set stops the export and is listed, with nothing touched: an image in a Play
+  slot folder, an image of a display class being written in an App Store folder, or a screenshot
+  brandify wrote that was edited since. `--replace` deletes them. Images of other display classes
+  (e.g. a hand-made iPad set) and text metadata are left alone, and a file outside the set is
+  never overwritten.
+- **frameit:** `deliver` uploads only `*_framed.png` files from a folder that has any, so a frameit
+  leftover there would silently hide brandify's screenshots. Export treats one as an image that
+  doesn't belong (`--replace` deletes it) and rejects shot names that would end in `_framed`.
+
+### System dialogs show up too
+
+brandify captures what is really on the screen, including system UI. A fresh iOS simulator shows a
+one-time "Speed up your typing by sliding your finger…" panel the first time the keyboard opens, and
+a `Keyboard.show` shot then captures that panel instead of the keyboard. Dismiss it once on the
+simulator (tap Continue), then capture again; it doesn't come back on that simulator. The same goes for permission prompts
+and other first-run dialogs: grant or dismiss them on the device before capturing.

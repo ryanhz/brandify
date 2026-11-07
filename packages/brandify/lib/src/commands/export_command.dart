@@ -11,6 +11,10 @@ class ExportCommand extends Command<int> {
       ..addOption('config', abbr: 'c', defaultsTo: 'brandify.yaml', help: 'Path to brandify.yaml.')
       ..addMultiOption('device', abbr: 'd', help: 'Only these device ids (default: all captured).')
       ..addMultiOption('locale', abbr: 'l', help: 'Only these locales (default: all captured).')
+      ..addFlag('replace',
+          negatable: false,
+          help: 'Delete images in the folders being written that brandify did not export '
+              '(fastlane would upload them with the new set). Without it, they stop the export.')
       ..addFlag('verbose', abbr: 'v', negatable: false, help: 'Show more detail.');
   }
 
@@ -28,7 +32,8 @@ class ExportCommand extends Command<int> {
     final config = BrandifyConfig.load(a['config'] as String);
     final written = FastlaneExporter(config: config, logger: logger).run(
         devices: (a['device'] as List<String>).toSet(),
-        locales: (a['locale'] as List<String>).toSet());
+        locales: (a['locale'] as List<String>).toSet(),
+        replace: a['replace'] as bool);
     logger.info('Exported ${written.length} screenshots -> ${p.relative(config.fastlaneDir)}');
     return 0;
   }

@@ -240,17 +240,32 @@ $extra
           reason: 'nothing is touched when the plan fails');
     });
 
-    test('replaces stale screenshots, keeps text metadata and other display classes', () {
-      final phoneDir = p.join(root.path, 'fastlane/metadata/android/en-US/images/phoneScreenshots');
-      Directory(phoneDir).createSync(recursive: true);
-      File(p.join(phoneDir, '4_old.png')).writeAsBytesSync([1]);
-      File(p.join(root.path, 'fastlane/metadata/android/en-US/title.txt')).writeAsStringSync('Acme');
+    test('replaces its own earlier export; keeps text metadata and other display classes', () {
+      File(p.join(root.path, 'fastlane/metadata/android/en-US/title.txt'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('Acme');
       final asDir = p.join(root.path, 'fastlane/screenshots/en-US');
       Directory(asDir).createSync(recursive: true);
-      File(p.join(asDir, '9_old_iphone.png'))
-          .writeAsBytesSync(img.encodePng(img.Image(width: 1290, height: 2796)));
       File(p.join(asDir, 'ipad_1.png')).writeAsBytesSync(img.encodePng(img.Image(width: 2064, height: 2752)));
 
+      pixel('en-US', ['home', 'add_task', 'settings']);
+      iphone('en-US', ['home', 'add_task', 'settings']);
+      FastlaneExporter(config: config(locales: '[en-US]'), logger: logger).run();
+      final manifest =
+          jsonDecode(File(p.join(root.path, 'fastlane/.brandify-export.json')).readAsStringSync());
+      expect(
+          (manifest['files'] as Map).keys,
+          containsAll([
+            'screenshots/en-US/1_home.png',
+            'metadata/android/en-US/images/phoneScreenshots/3_settings.png'
+          ]));
+
+      // Fewer shots next time: the old third one goes, without --replace.
+      root
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.contains('build/brandify'))
+          .forEach((f) => f.deleteSync());
       pixel('en-US', ['home', 'add_task']);
       iphone('en-US', ['home', 'add_task']);
       FastlaneExporter(config: config(locales: '[en-US]'), logger: logger).run();
@@ -260,6 +275,82 @@ $extra
       expect(File(p.join(root.path, 'fastlane/metadata/android/en-US/title.txt')).existsSync(), isTrue);
       expect(files('fastlane/screenshots/en-US'), ['1_home.png', '2_add_task.png', 'ipad_1.png'],
           reason: 'the 6.9" set is replaced, the iPad set left alone');
+      final keys =
+          (jsonDecode(File(p.join(root.path, 'fastlane/.brandify-export.json')).readAsStringSync())['files']
+                  as Map)
+              .keys;
+      expect(keys, isNot(contains('screenshots/en-US/3_settings.png')));
+    });
+
+    test('images it did not write stop the export; --replace deletes them', () {
+      final phoneDir = p.join(root.path, 'fastlane/metadata/android/en-US/images/phoneScreenshots');
+      Directory(phoneDir).createSync(recursive: true);
+      File(p.join(phoneDir, 'promo.png')).writeAsBytesSync([1]);
+      final asDir = p.join(root.path, 'fastlane/screenshots/en-US');
+      Directory(asDir).createSync(recursive: true);
+      File(p.join(asDir, 'old.jpg')).writeAsBytesSync(img.encodeJpg(img.Image(width: 1320, height: 2868)));
+      File(p.join(asDir, 'ipad.jpg')).writeAsBytesSync(img.encodeJpg(img.Image(width: 2064, height: 2752)));
+
+      pixel('en-US', ['home', 'b']);
+      iphone('en-US', ['home', 'b']);
+      final c = config(locales: '[en-US]');
+      expect(
+          () => FastlaneExporter(config: c, logger: logger).run(),
+          throwsA(isA<BrandifyException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                  contains('phoneScreenshots/promo.png'),
+                  contains('screenshots/en-US/old.jpg (App Store iPhone 6.9"'),
+                  isNot(contains('ipad.jpg')),
+                  contains('--replace')))));
+      expect(files('fastlane/metadata/android/en-US/images/phoneScreenshots'), ['promo.png'],
+          reason: 'nothing touched');
+      expect(File(p.join(root.path, 'fastlane/.brandify-export.json')).existsSync(), isFalse);
+
+      FastlaneExporter(config: c, logger: logger).run(replace: true);
+      expect(files('fastlane/metadata/android/en-US/images/phoneScreenshots'), ['1_home.png', '2_b.png']);
+      expect(files('fastlane/screenshots/en-US'), ['1_home.png', '2_b.png', 'ipad.jpg']);
+    });
+
+    test('a screenshot it wrote but someone edited is no longer its own', () {
+      pixel('en-US', ['home', 'b']);
+      final c = config(locales: '[en-US]');
+      FastlaneExporter(config: c, logger: logger).run();
+      final edited =
+          File(p.join(root.path, 'fastlane/metadata/android/en-US/images/phoneScreenshots/2_b.png'));
+      edited.writeAsBytesSync(
+          img.encodePng(img.Image(width: 1080, height: 1920)..clear(img.ColorRgb8(1, 2, 3))));
+      expect(() => FastlaneExporter(config: c, logger: logger).run(), throwsBp('2_b.png'));
+    });
+
+    test('a frameit *_framed image in a deliver folder stops the export', () {
+      final asDir = p.join(root.path, 'fastlane/screenshots/en-US');
+      Directory(asDir).createSync(recursive: true);
+      File(p.join(asDir, 'iPad Pro_framed.png'))
+          .writeAsBytesSync(img.encodePng(img.Image(width: 2200, height: 3000)));
+      iphone('en-US', ['home', 'b']);
+      expect(
+          () => FastlaneExporter(config: config(locales: '[en-US]'), logger: logger).run(devices: {'iphone'}),
+          throwsBp('iPad Pro_framed.png (frameit output'));
+    });
+
+    test('a shot exported under a *_framed name is rejected for the App Store', () {
+      iphone('en-US', ['home', 'photo_framed']);
+      expect(
+          () => FastlaneExporter(config: config(locales: '[en-US]'), logger: logger).run(devices: {'iphone'}),
+          throwsBp('shot "photo_framed"'));
+    });
+
+    test('never overwrites a file outside the set, even with --replace', () {
+      final asDir = p.join(root.path, 'fastlane/screenshots/en-US');
+      Directory(asDir).createSync(recursive: true);
+      File(p.join(asDir, '1_HOME.png')).writeAsBytesSync(img.encodePng(img.Image(width: 2064, height: 2752)));
+      iphone('en-US', ['home', 'b']);
+      expect(
+          () => FastlaneExporter(config: config(locales: '[en-US]'), logger: logger)
+              .run(devices: {'iphone'}, replace: true),
+          throwsBp('1_HOME.png (App Store iPad 13"'));
     });
 
     test('flattens opaque RGBA to RGB; transparent pixels are an error', () {
@@ -305,6 +396,36 @@ $extra
       pixel('zh-Hans', ['home', 'b']);
       expect(() => FastlaneExporter(config: config(locales: '[zh-CN, zh-Hans]'), logger: logger).run(),
           throwsBp('zh-CN and zh-Hans both map to Google Play "zh-CN"'));
+    });
+
+    test('device prefixes come from the config, so -d runs name files like a full run', () {
+      iphone('en-US', ['home', 'b']);
+      captured('ipad', 'en-US', ['home', 'b'], w: 2064, h: 2752, fw: 2064, fh: 2752);
+      final c = config(
+          locales: '[en-US]', devices: '  - {id: ipad, platform: ios, simulator: "iPad Pro 13-inch (M4)"}');
+      FastlaneExporter(config: c, logger: logger).run(devices: {'iphone'});
+      FastlaneExporter(config: c, logger: logger).run(devices: {'ipad'});
+      FastlaneExporter(config: c, logger: logger).run(devices: {'iphone'});
+      expect(files('fastlane/screenshots/en-US'),
+          ['ipad_1_home.png', 'ipad_2_b.png', 'iphone_1_home.png', 'iphone_2_b.png']);
+    });
+
+    test('Chinese: Play zh-CN/zh-TW, App Store zh-Hans/zh-Hant, from one config', () {
+      for (final l in ['zh-Hans', 'zh-Hant']) {
+        pixel(l, ['home', 'b']);
+        iphone(l, ['home', 'b']);
+      }
+      final written = FastlaneExporter(config: config(locales: '[zh-Hans, zh-Hant]'), logger: logger).run();
+      expect({
+        for (final e in written) '${e.item.locale}/${e.item.slot.store.name}': e.storeLocale
+      }, {
+        'zh-Hans/play': 'zh-CN',
+        'zh-Hans/appStore': 'zh-Hans',
+        'zh-Hant/play': 'zh-TW',
+        'zh-Hant/appStore': 'zh-Hant',
+      });
+      expect(files('fastlane/screenshots'), ['zh-Hans', 'zh-Hant']);
+      expect(files('fastlane/metadata/android'), ['zh-CN', 'zh-TW']);
     });
 
     test('several iOS display classes share a locale folder with device prefixes', () {
