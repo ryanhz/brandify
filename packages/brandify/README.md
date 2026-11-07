@@ -32,6 +32,10 @@ the right device geometry renders almost the same pixels and is much faster.
 ## Evidence
 
 - **Native views:** the evaluation above, on a production Flutter app with native 3D rendering.
+- **Native views, reproducible:** the [example app](../../example)'s home screen has a chart card
+  drawn by Android `Canvas` / UIKit Core Graphics in a `PlatformView`. brandify captures and frames
+  it ([framed Android capture](../../docs/example/native_view_framed_android.png)); a widget-test
+  renderer has no platform views and leaves that area blank.
 - **Deterministic:** two full runs, each from a **cold emulator boot** (boot, build, 2 locales × 3
   screens, shutdown; 89 s and 78 s), produced **byte-identical PNGs**: all 6 files, every byte.
 - **iOS too:** on an iPhone 17 Pro Max simulator (iOS 26.4, Xcode 27.0), 2 locales × 3 screens at

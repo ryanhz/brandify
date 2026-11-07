@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 void main() => runApp(const BrandifyExampleApp());
@@ -37,6 +38,8 @@ class HomePage extends StatelessWidget {
         children: [
           Text('Good morning', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 16),
+          const FocusChart(),
+          const SizedBox(height: 16),
           for (final (title, due, done) in _tasks)
             Card(
               child: CheckboxListTile(
@@ -57,6 +60,27 @@ class HomePage extends StatelessWidget {
         label: const Text('New task'),
       ),
     );
+  }
+}
+
+/// Keep in sync with MainActivity.kt and AppDelegate.swift.
+const focusChartViewType = 'brandify_example/focus_chart';
+
+/// A weekly chart drawn by the platform (Android Canvas, UIKit Core
+/// Graphics), embedded as a PlatformView. It's here to show what brandify
+/// captures and widget-test renderers can't: they have no platform views,
+/// so this card comes out blank there.
+class FocusChart extends StatelessWidget {
+  const FocusChart({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget view = switch (defaultTargetPlatform) {
+      TargetPlatform.android => const AndroidView(viewType: focusChartViewType),
+      TargetPlatform.iOS => const UiKitView(viewType: focusChartViewType),
+      _ => const Center(child: Text('Native chart: Android and iOS only')),
+    };
+    return SizedBox(height: 190, child: view);
   }
 }
 
