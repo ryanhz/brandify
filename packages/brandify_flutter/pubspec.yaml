@@ -1,0 +1,21 @@
+name: brandify_flutter
+description: Test helper and framing widgets for brandify. Add as a dev_dependency of your Flutter app.
+version: 0.0.1
+repository: https://github.com/TODO/brandify
+environment:
+  sdk: ^3.9.0
+  flutter: ">=3.35.3"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  # Framing (`brandify frame`). Only lib/src/frame/ads_adapter.dart imports it.
+  app_deploy_screenshots: ^1.2.1
+
+dev_dependencies:
+  flutter_lints: ^6.0.0

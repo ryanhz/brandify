@@ -1,0 +1,35 @@
+import 'dart:io';
+
+import 'package:args/command_runner.dart';
+
+import 'commands/capture_command.dart';
+import 'commands/frame_command.dart';
+import 'process.dart';
+
+const brandifyVersion = '0.0.1';
+
+/// Entry point for the CLI. Returns the process exit code.
+Future<int> runBrandify(List<String> args) async {
+  final runner = CommandRunner<int>(
+    'brandify',
+    'Turn an unbranded Flutter app into store-ready assets.',
+  )
+    ..argParser.addFlag('version', negatable: false, help: 'Print the version.')
+    ..addCommand(CaptureCommand())
+    ..addCommand(FrameCommand());
+
+  try {
+    final results = runner.parse(args);
+    if (results['version'] == true) {
+      print(brandifyVersion);
+      return 0;
+    }
+    return await runner.runCommand(results) ?? 0;
+  } on UsageException catch (e) {
+    stderr.writeln(e);
+    return 64;
+  } on BrandifyException catch (e) {
+    stderr.writeln('error: ${e.message}');
+    return 1;
+  }
+}

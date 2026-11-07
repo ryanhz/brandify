@@ -1,0 +1,8 @@
+name: brandify_workspace
+publish_to: none
+environment:
+  sdk: ^3.6.0
+workspace:
+  - packages/brandify
+  - packages/brandify_flutter
+  - example

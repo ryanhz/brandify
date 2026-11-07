@@ -1,0 +1,28 @@
+# brandify config for the example app.
+locales: [en-US, de-DE]
+
+devices:
+  - id: pixel
+    platform: android
+    avd: brandify_pixel          # booted headless if not running; or `serial: emulator-5554`
+  - id: iphone69
+    platform: ios
+    simulator: iPhone 17 Pro Max   # macOS only
+
+capture:
+  test: integration_test/brandify_test.dart
+  port: 47123
+  output: build/brandify/raw
+
+frame:
+  background: ['#0B1F3A', '#2E5BFF']
+  device: screen                   # or bezel
+  captions:
+    en-US:
+      home: {headline: Everything in one place, subheadline: Plan your day in seconds}
+      add_task: {headline: Add a task, subheadline: "Type it, done"}
+      add_task_keyboard: Capture ideas as they come
+    de-DE:
+      home: {headline: Alles an einem Ort, subheadline: Plane deinen Tag in Sekunden}
+      add_task: {headline: Aufgabe hinzufügen, subheadline: "Eintippen, fertig"}
+      add_task_keyboard: Ideen sofort festhalten
