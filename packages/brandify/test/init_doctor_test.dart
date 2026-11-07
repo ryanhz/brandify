@@ -115,12 +115,16 @@ void main() {
       String adbDevices = 'List of devices attached\nemulator-5554\tdevice\n',
       String? simctl,
       bool xcode = true,
+      bool adb = true,
       bool fastlane = false,
     }) =>
         (exe, args) {
           final cmd = [p.basename(exe), ...args].join(' ');
           if (cmd == 'flutter --version --machine') return ok('Waiting...\n$flutter');
-          if (cmd == 'adb version') return ok('Android Debug Bridge version 1.0.41\n');
+          if (cmd == 'adb version') {
+            if (!adb) throw BrandifyException('Could not run `adb`');
+            return ok('Android Debug Bridge version 1.0.41\n');
+          }
           if (cmd == 'adb devices') return ok(adbDevices);
           if (cmd == 'emulator -list-avds') return ok(avds);
           if (cmd == 'xcodebuild -version') return xcode ? ok('Xcode 27.0\nBuild version 27A1\n') : failed();
@@ -134,8 +138,9 @@ void main() {
           return failed('unexpected $cmd');
         };
 
-    Future<List<Check>> doctor(Handler h, {bool mac = true}) =>
-        Doctor(configPath: p.join(root.path, 'brandify.yaml'), runner: FakeRunner([h]), isMacOS: mac, env: env)
+    Future<List<Check>> doctor(Handler h, {bool mac = true, Set<String> devices = const {}}) =>
+        Doctor(configPath: p.join(root.path, 'brandify.yaml'), runner: FakeRunner([h]), isMacOS: mac, env: env,
+                devices: devices)
             .run();
 
     void project({String devices = '[{id: pixel, platform: android, avd: Pixel_9}, '
@@ -183,6 +188,32 @@ void main() {
       expect(ios.status, CheckStatus.warn);
       expect(ios.hint, contains('capture skips iphone69'));
       expect(printChecks(cs, logger), 0);
+    });
+
+    test('no adb on a Mac: Android devices are a warning, unless asked for with -d', () async {
+      project();
+      var cs = await doctor(tools(adb: false));
+      final adb = cs.singleWhere((c) => c.title.startsWith('Android'));
+      expect(adb.status, CheckStatus.warn, reason: show(cs));
+      expect(adb.hint, contains('capture skips pixel'));
+      expect(printChecks(cs, logger), 0);
+
+      cs = await doctor(tools(adb: false), devices: {'pixel'});
+      expect(cs.singleWhere((c) => c.title.startsWith('Android')).status, CheckStatus.fail);
+      expect(cs.any((c) => c.title.startsWith('iOS')), isFalse, reason: 'iphone69 not selected');
+
+      cs = await doctor(tools(), devices: {'iphone69'}, mac: false);
+      expect(cs.singleWhere((c) => c.title.startsWith('iOS')).status, CheckStatus.fail);
+
+      cs = await doctor(tools(), devices: {'tablet'});
+      expect(show(cs), contains('Unknown device tablet'));
+    });
+
+    test('fails when every configured device would be skipped', () async {
+      project(devices: '[{id: pixel, platform: android, avd: Pixel_9}]');
+      final cs = await doctor(tools(adb: false));
+      expect(cs.singleWhere((c) => c.title.startsWith('No configured device')).status, CheckStatus.fail);
+      expect(printChecks(cs, logger), 1);
     });
 
     test('no config: says to run init, checks both platforms; offline serial is a warning', () async {

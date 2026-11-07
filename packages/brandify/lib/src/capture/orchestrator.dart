@@ -36,8 +36,10 @@ class CaptureOrchestrator {
     DriverFactory? driverFactory,
     this.flutter = 'flutter',
     bool? isMacOS,
+    AndroidSdk? androidSdk,
   })  : isMacOS = isMacOS ?? Platform.isMacOS,
-        driverFactory = driverFactory ?? _defaultDrivers(config, runner, logger);
+        androidSdk = androidSdk ?? AndroidSdk.locate(),
+        driverFactory = driverFactory ?? _defaultDrivers(config, runner, logger, androidSdk);
 
   final BrandifyConfig config;
   final ProcessRunner runner;
@@ -45,10 +47,10 @@ class CaptureOrchestrator {
   final DriverFactory driverFactory;
   final String flutter;
   final bool isMacOS;
+  final AndroidSdk androidSdk;
 
   static DriverFactory _defaultDrivers(
-      BrandifyConfig config, ProcessRunner runner, Logger logger) {
-    AndroidSdk? sdk;
+      BrandifyConfig config, ProcessRunner runner, Logger logger, AndroidSdk? sdk) {
     return (d) => switch (d) {
           AndroidDeviceConfig() => AndroidDriver(d,
               runner: runner,
@@ -62,11 +64,20 @@ class CaptureOrchestrator {
 
   Future<List<CaptureResult>> run({Set<String>? devices, Set<String>? locales}) async {
     final selectedDevices = _select('device', config.devices.map((d) => d.id), devices);
-    if ((devices == null || devices.isEmpty) && !isMacOS) {
+    if (devices == null || devices.isEmpty) {
       // Not asked for explicitly: skip what this machine can't run.
-      for (final d in config.devices.where((d) => d.platform == DevicePlatform.ios)) {
-        logger.warn('skipping iOS device "${d.id}": iOS simulators need macOS.');
-        selectedDevices.remove(d.id);
+      final android = config.devices.where((d) => d.platform == DevicePlatform.android).toList();
+      if (android.isNotEmpty && !await adbAvailable(runner, androidSdk)) {
+        for (final d in android) {
+          logger.warn('skipping Android device "${d.id}": adb not found (no Android SDK on this machine).');
+          selectedDevices.remove(d.id);
+        }
+      }
+      if (!isMacOS) {
+        for (final d in config.devices.where((d) => d.platform == DevicePlatform.ios)) {
+          logger.warn('skipping iOS device "${d.id}": iOS simulators need macOS.');
+          selectedDevices.remove(d.id);
+        }
       }
       if (selectedDevices.isEmpty) {
         throw BrandifyException('No device in brandify.yaml can run on this machine.');

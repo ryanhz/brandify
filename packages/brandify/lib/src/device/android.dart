@@ -35,6 +35,15 @@ class AndroidSdk {
   }
 }
 
+/// Whether `adb` from [sdk] runs on this machine.
+Future<bool> adbAvailable(ProcessRunner runner, AndroidSdk sdk) async {
+  try {
+    return (await runner.run(sdk.adb, ['version'], timeout: const Duration(seconds: 60))).exitCode == 0;
+  } on BrandifyException {
+    return false;
+  }
+}
+
 class AndroidDriver implements DeviceDriver {
   AndroidDriver(this.config,
       {required this.runner,

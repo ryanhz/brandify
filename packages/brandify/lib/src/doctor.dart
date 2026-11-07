@@ -41,6 +41,7 @@ class Doctor {
   Doctor({
     required this.configPath,
     required this.runner,
+    this.devices = const {},
     this.flutter = 'flutter',
     bool? isMacOS,
     Map<String, String>? env,
@@ -49,6 +50,11 @@ class Doctor {
 
   final String configPath;
   final ProcessRunner runner;
+
+  /// Only these device ids, as `capture -d`. When empty, like capture, a
+  /// device this machine can't run (iOS off macOS, Android without adb) is
+  /// a warning: capture skips it.
+  final Set<String> devices;
   final String flutter;
   final bool isMacOS;
   final Map<String, String> env;
@@ -56,15 +62,45 @@ class Doctor {
   String get _root => p.dirname(p.absolute(configPath));
 
   Future<List<Check>> run() async {
+    _skipped.clear();
     final checks = <Check>[await _flutter(), ..._project()];
     final config = _config(checks);
-    final android = config?.devices.whereType<AndroidDeviceConfig>().toList();
-    final ios = config?.devices.whereType<IosDeviceConfig>().toList();
+    final selected = config == null ? null : _select(config, checks);
+    final android = selected?.whereType<AndroidDeviceConfig>().toList();
+    final ios = selected?.whereType<IosDeviceConfig>().toList();
 
     if (android == null || android.isNotEmpty) checks.addAll(await _android(android ?? const []));
     if (ios == null || ios.isNotEmpty) checks.addAll(await _ios(ios ?? const []));
+    if (selected != null && selected.isNotEmpty && _skipped.length == selected.length) {
+      checks.add(Check(CheckStatus.fail, 'No configured device can run on this machine',
+          hint: 'capture would skip ${_skipped.join(', ')}.'));
+    }
     checks.add(await _fastlane());
     return checks;
+  }
+
+  /// Devices capture would skip on this machine (only when no [devices]).
+  final _skipped = <String>[];
+
+  /// A device this machine can't run: a warning that capture skips it, or a
+  /// failure when it was asked for with `-d`.
+  Check _unavailable(String title, List<DeviceConfig> devices, {required String fix}) {
+    if (devices.isEmpty) return Check(CheckStatus.warn, title, hint: fix);
+    if (this.devices.isNotEmpty) return Check(CheckStatus.fail, title, hint: fix);
+    _skipped.addAll(devices.map((d) => d.id));
+    return Check(CheckStatus.warn, title,
+        hint: 'capture skips ${devices.map((d) => d.id).join(', ')} on this machine. $fix');
+  }
+
+  List<DeviceConfig> _select(BrandifyConfig config, List<Check> checks) {
+    if (devices.isEmpty) return config.devices;
+    final known = config.devices.map((d) => d.id).toSet();
+    final unknown = devices.difference(known);
+    if (unknown.isNotEmpty) {
+      checks.add(Check(CheckStatus.fail, 'Unknown device ${unknown.join(', ')}',
+          hint: 'Configured: ${known.join(', ')}.'));
+    }
+    return config.devices.where((d) => devices.contains(d.id)).toList();
   }
 
   /// Runs a tool; null when it can't be started at all.
@@ -161,8 +197,8 @@ class Doctor {
     final adb = await _try(sdk.adb, ['version']);
     if (adb == null || adb.exitCode != 0) {
       return [
-        Check(devices.isEmpty ? CheckStatus.warn : CheckStatus.fail, 'Android: adb not found',
-            hint: 'Install the Android SDK platform-tools and set ANDROID_HOME (or put adb on PATH).')
+        _unavailable('Android: adb not found', devices,
+            fix: 'Install the Android SDK platform-tools and set ANDROID_HOME (or put adb on PATH).')
       ];
     }
     final checks = [
@@ -210,10 +246,9 @@ class Doctor {
   Future<List<Check>> _ios(List<IosDeviceConfig> devices) async {
     if (!isMacOS) {
       return [
-        Check(devices.isEmpty ? CheckStatus.skip : CheckStatus.warn, 'iOS: needs macOS',
-            hint: devices.isEmpty
-                ? null
-                : 'capture skips ${devices.map((d) => d.id).join(', ')} on this machine.')
+        devices.isEmpty
+            ? Check(CheckStatus.skip, 'iOS: needs macOS')
+            : _unavailable('iOS: needs macOS', devices, fix: 'iOS simulators run only on macOS.')
       ];
     }
     final xcode = await _try('xcodebuild', ['-version']);

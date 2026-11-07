@@ -6,7 +6,9 @@ import '../process.dart';
 
 class DoctorCommand extends Command<int> {
   DoctorCommand() {
-    argParser.addOption('config', abbr: 'c', defaultsTo: 'brandify.yaml', help: 'Path to brandify.yaml.');
+    argParser
+      ..addOption('config', abbr: 'c', defaultsTo: 'brandify.yaml', help: 'Path to brandify.yaml.')
+      ..addMultiOption('device', abbr: 'd', help: 'Only these device ids, as for capture (default: all).');
   }
 
   @override
@@ -18,7 +20,12 @@ class DoctorCommand extends Command<int> {
 
   @override
   Future<int> run() async {
-    final checks = await Doctor(configPath: argResults!['config'] as String, runner: IoProcessRunner()).run();
+    final a = argResults!;
+    final checks = await Doctor(
+      configPath: a['config'] as String,
+      runner: IoProcessRunner(),
+      devices: (a['device'] as List<String>).toSet(),
+    ).run();
     return printChecks(checks, Logger());
   }
 }

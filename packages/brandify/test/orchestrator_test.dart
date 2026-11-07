@@ -144,6 +144,16 @@ capture: {port: 47999, stable_interval_ms: 0}
     expect(results.map((r) => r.deviceId), ['phone']);
   });
 
+  test('Android devices are skipped without adb unless asked for', () async {
+    runner.handlers.add((exe, args) => args.join(' ') == 'version' ? failed() : null);
+    final o = orchestrator();
+    await expectLater(o.run(locales: {'en-US'}),
+        throwsA(isA<BrandifyException>().having((e) => e.message, 'm', contains('No device'))));
+    expect(session.teardowns, 0);
+    final results = await o.run(devices: {'phone'}, locales: {'en-US'});
+    expect(results.map((r) => r.deviceId), ['phone']);
+  });
+
   test('unknown --device is rejected before anything boots', () async {
     await expectLater(orchestrator().run(devices: {'tablet'}),
         throwsA(isA<BrandifyException>().having((e) => e.message, 'm', contains('Unknown device tablet'))));
