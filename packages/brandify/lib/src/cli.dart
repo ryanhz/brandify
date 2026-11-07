@@ -9,7 +9,7 @@ import 'commands/frame_command.dart';
 import 'commands/init_command.dart';
 import 'process.dart';
 
-const brandifyVersion = '0.0.1';
+const brandifyVersion = '0.1.0';
 
 /// Entry point for the CLI. Returns the process exit code.
 Future<int> runBrandify(List<String> args) async {

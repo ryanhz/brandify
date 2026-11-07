@@ -1,14 +1,14 @@
 # brandify
 
-**Status: pre-release.** Capture works on Android emulators and iOS simulators; framing works on
-real Android and iOS captures; export writes the folders fastlane uploads from (Google Play upload
-through fastlane not yet tried).
+**Status: 0.1.0, the first release.** Capture, framing and export work on Android emulators and iOS
+simulators. Export writes the folders fastlane uploads from; uploading them with `supply` /
+`deliver` has not been tried yet.
 
 brandify turns your Flutter app into store screenshots taken from a **real simulator or emulator**,
 driven by an `integration_test` script and run unattended with one command:
 
 ```bash
-dart run brandify capture
+dart run brandify capture && dart run brandify frame && dart run brandify export
 ```
 
 ## Why real capture
@@ -33,10 +33,10 @@ the right device geometry renders almost the same pixels and is much faster.
 ## Evidence
 
 - **Native views:** the evaluation above, on a production Flutter app with native 3D rendering.
-- **Native views, reproducible:** the [example app](../../example)'s home screen has a chart card
-  drawn by Android `Canvas` / UIKit Core Graphics in a `PlatformView`. brandify captures and frames
-  it ([framed Android capture](../../docs/example/native_view_framed_android.png)); a widget-test
-  renderer has no platform views and leaves that area blank.
+- **Native views, reproducible:** the [example app](https://github.com/ryanhz/brandify/tree/master/example)'s home screen has a
+  chart card drawn by Android `Canvas` / UIKit Core Graphics in a `PlatformView`. brandify captures
+  and frames it (below, on Android); a widget-test renderer has no platform views and leaves that
+  area blank.
 - **Deterministic:** two full runs, each from a **cold emulator boot** (boot, build, 2 locales × 3
   screens, shutdown; 89 s and 78 s), produced **byte-identical PNGs**: all 6 files, every byte.
 - **iOS too:** on an iPhone 17 Pro Max simulator (iOS 26.4, Xcode 27.0), 2 locales × 3 screens at
@@ -47,6 +47,10 @@ the right device geometry renders almost the same pixels and is much faster.
 - **Honest about Flutter pixels:** against a widget test with matched geometry, 0.56 % of app-content
   pixels differ slightly and 0.03 % strongly (text antialiasing).
 
+<img src="https://raw.githubusercontent.com/ryanhz/brandify/master/docs/example/native_view_framed_android.png" alt="The example app's home screen on a
+Pixel emulator, framed for Google Play: real status bar, a natively drawn chart card, a caption above"
+width="270">
+
 ## Requirements
 
 - **Flutter 3.35.3 or newer (Dart 3.9).** `brandify_flutter` depends on
@@ -55,19 +59,43 @@ the right device geometry renders almost the same pixels and is much faster.
 - Android: the Android SDK (emulator, platform-tools) and an AVD.
 - iOS: macOS with Xcode and an iOS simulator runtime.
 
-## Usage (current)
+## Installation
 
-In your Flutter app's folder:
+In your Flutter app's folder, add both packages as dev dependencies, at the same version:
 
 ```bash
 flutter pub add dev:brandify dev:brandify_flutter
-dart run brandify init     # writes brandify.yaml and integration_test/brandify_test.dart
-dart run brandify doctor   # checks Flutter, the config, Android SDK/AVDs, Xcode/simulators, fastlane
 ```
 
-`init` picks an existing AVD if it finds one and never overwrites files (`--force` does). `doctor`
-only reads: it lists every problem with what to do about it, and exits 1 if a capture would fail.
-iOS devices on a machine without macOS are a warning; capture skips them there.
+`brandify` is the command line tool (`dart run brandify …`); `brandify_flutter` is the helper your
+capture test and the framing step use. Neither ends up in your release app.
+
+## Usage
+
+```bash
+dart run brandify init     # writes brandify.yaml and integration_test/brandify_test.dart
+dart run brandify doctor   # checks that a capture can run on this machine
+dart run brandify capture  # raw screenshots, from the emulator / simulator
+dart run brandify frame    # store slides
+dart run brandify export   # into fastlane's folders
+```
+
+`init` picks an existing AVD if it finds one and never overwrites files (`--force` does).
+
+### `brandify doctor`
+
+Checks Flutter (3.35.3 or newer), that your app depends on `brandify_flutter`, `brandify.yaml` and
+the capture test, the Android SDK (`adb`, `emulator`, each configured AVD), Xcode and each configured
+simulator, and fastlane (optional). It only reads: nothing is booted or changed. Every problem comes
+with what to do about it, and it exits 1 if a capture would fail.
+
+A device this machine can't run is a warning, not a failure, because `capture` skips it: an iOS
+device on a machine without macOS, or an Android device when no Android SDK (`adb`) is found. A device
+you name with `-d` is never skipped, by either command:
+
+```bash
+dart run brandify doctor -d iphone69    # only this device; fails if it can't run here
+```
 
 `brandify.yaml` next to your `pubspec.yaml`:
 
@@ -98,7 +126,16 @@ void main() {
 }
 ```
 
-Raw screenshots and a manifest land in `build/brandify/raw/<device>/<locale>/`.
+### Capture
+
+```bash
+dart run brandify capture              # every device and locale this machine can run
+dart run brandify capture -d pixel -l en-US
+```
+
+Each device is booted headless if it isn't running (an AVD cold boot takes a minute or two), cleaned
+up (status bar, notifications), used for every locale, then shut down if brandify booted it. Raw
+screenshots and a manifest land in `build/brandify/raw/<device>/<locale>/`.
 
 Each locale is its own `flutter test` run. brandify runs `flutter pub get` once, only when
 `pubspec.yaml` or `pubspec.lock` changed since the last one, and then runs every test with
@@ -182,7 +219,15 @@ Copies the framed screenshots to where fastlane uploads them from, next to `bran
   leftover there would silently hide brandify's screenshots. Export treats one as an image that
   doesn't belong (`--replace` deletes it) and rejects shot names that would end in `_framed`.
 
-### System dialogs show up too
+## Running headless and in CI
+
+Capture needs no window: AVDs boot with `-no-window`, simulators without Simulator.app. On a Linux CI
+runner, enable KVM and create the AVD your `brandify.yaml` names; brandify boots it.
+brandify's own CI does exactly that on every push, from `flutter create` to `export`:
+see [`.github/workflows/ci.yml`](https://github.com/ryanhz/brandify/blob/master/.github/workflows/ci.yml)
+and [`tool/e2e.sh`](https://github.com/ryanhz/brandify/blob/master/tool/e2e.sh).
+
+## System dialogs show up too
 
 brandify captures what is really on the screen, including system UI. A fresh iOS simulator shows a
 one-time "Speed up your typing by sliding your finger…" panel the first time the keyboard opens, and

@@ -1,7 +1,9 @@
 name: brandify
 description: Turn an unbranded Flutter app into store-ready assets using real simulator/emulator screenshots driven by integration_test.
-version: 0.0.1
-repository: https://github.com/TODO/brandify
+version: 0.1.0
+repository: https://github.com/ryanhz/brandify
+issue_tracker: https://github.com/ryanhz/brandify/issues
+topics: [screenshots, app-store, google-play, fastlane, integration-test]
 environment:
   sdk: ^3.6.0
 resolution: workspace
