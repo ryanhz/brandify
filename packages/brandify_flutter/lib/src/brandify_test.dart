@@ -64,8 +64,15 @@ void brandifyTest(
   Future<void> Function(WidgetTester tester, Shot shot) body, {
   Timeout? timeout,
 }) {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(description, (tester) async {
+    // Draw every frame the engine asks for, not only the ones the test
+    // pumps. A native view (PlatformView) updates its texture outside the
+    // test's pumps; under the default `fadePointers` policy those frames are
+    // dropped and the view stays blank on screen, so the capture would be too.
+    final policyWas = binding.framePolicy;
+    binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+    addTearDown(() => binding.framePolicy = policyWas);
     final bannerWas = WidgetsApp.debugAllowBannerOverride;
     final cursorWas = EditableText.debugDeterministicCursor;
     WidgetsApp.debugAllowBannerOverride = false;
