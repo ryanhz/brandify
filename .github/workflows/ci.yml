@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ios:
+        description: Also run the end-to-end check on an iOS simulator (macOS runner)
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AVD: brandify_pixel
+  SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+
+jobs:
+  test:
+    name: Analyze and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock', '**/pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: flutter pub get
+      - name: Analyze
+        run: dart analyze --fatal-infos
+      - name: brandify (dart test)
+        working-directory: packages/brandify
+        run: dart test
+      - name: brandify_flutter (flutter test)
+        working-directory: packages/brandify_flutter
+        run: flutter test --no-pub
+
+  e2e-android:
+    name: End to end (Android emulator)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock', '**/pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('example/android/**/*.gradle.kts', 'example/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - name: Cache system image
+        id: sysimg
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/system-images/android-36/google_apis/x86_64
+          key: sysimg-${{ env.SYSTEM_IMAGE }}
+      - name: Install emulator and create the AVD
+        run: |
+          sdk="$ANDROID_HOME/cmdline-tools/latest/bin"
+          yes | "$sdk/sdkmanager" --licenses >/dev/null || true
+          "$sdk/sdkmanager" platform-tools emulator "$SYSTEM_IMAGE" >/dev/null
+          echo no | "$sdk/avdmanager" create avd -n "$AVD" -k "$SYSTEM_IMAGE" -d pixel_8
+          "$ANDROID_HOME/emulator/emulator" -list-avds
+      - run: flutter pub get
+      - name: Example app (doctor, capture, frame, export)
+        run: tool/e2e.sh example android
+      - name: Fresh app (flutter create, init, capture, frame, export)
+        run: tool/e2e.sh fresh android
+        env:
+          BRANDIFY_E2E_AVD: ${{ env.AVD }}
+          BRANDIFY_E2E_DIR: ${{ runner.temp }}
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-android
+          if-no-files-found: ignore
+          path: |
+            example/build/brandify/
+            ${{ runner.temp }}/brandify_e2e_app/build/brandify/
+
+  # macOS runners are slow and expensive: run this one by hand
+  # (Actions > CI > Run workflow > ios).
+  e2e-ios:
+    name: End to end (iOS simulator)
+    if: github.event_name == 'workflow_dispatch' && inputs.ios
+    needs: test
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock', '**/pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Xcode and simulators
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices available | grep -i "iphone 17 pro max"
+      - run: flutter pub get
+      - name: Example app (doctor, capture, frame, export)
+        run: tool/e2e.sh example ios
+      - name: Fresh app (flutter create, init, capture, frame, export)
+        run: tool/e2e.sh fresh ios
+        env:
+          BRANDIFY_E2E_DIR: ${{ runner.temp }}
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-ios
+          if-no-files-found: ignore
+          path: |
+            example/build/brandify/
+            ${{ runner.temp }}/brandify_e2e_app/build/brandify/
