@@ -24,17 +24,18 @@ class CaptureCommand extends Command<int> {
   Future<int> run() async {
     final a = argResults!;
     final logger = Logger(verbose: a['verbose'] as bool);
-    final config = BrandifyConfig.load(a['config'] as String);
-    final results = await CaptureOrchestrator(
-      config: config,
-      runner: IoProcessRunner(),
-      logger: logger,
-    ).run(
-      devices: (a['device'] as List<String>).toSet(),
-      locales: (a['locale'] as List<String>).toSet(),
-    );
-    final total = results.fold<int>(0, (n, r) => n + r.shots.length);
-    logger.info('Captured $total screenshots in ${results.length} device/locale runs.');
+    await capture(BrandifyConfig.load(a['config'] as String), logger,
+        devices: (a['device'] as List<String>).toSet(), locales: (a['locale'] as List<String>).toSet());
     return 0;
   }
+}
+
+/// The capture step, shared by `capture` and `build`.
+Future<List<CaptureResult>> capture(BrandifyConfig config, Logger logger,
+    {Set<String> devices = const {}, Set<String> locales = const {}}) async {
+  final results = await CaptureOrchestrator(config: config, runner: IoProcessRunner(), logger: logger)
+      .run(devices: devices, locales: locales);
+  final total = results.fold<int>(0, (n, r) => n + r.shots.length);
+  logger.info('Captured $total screenshots in ${results.length} device/locale runs.');
+  return results;
 }

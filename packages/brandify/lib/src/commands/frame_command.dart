@@ -27,13 +27,17 @@ class FrameCommand extends Command<int> {
   Future<int> run() async {
     final a = argResults!;
     final logger = Logger(verbose: a['verbose'] as bool);
-    final config = BrandifyConfig.load(a['config'] as String);
-    final job = FrameJob.build(config,
-        devices: (a['device'] as List<String>).toSet(),
-        locales: (a['locale'] as List<String>).toSet(),
-        logger: logger);
-    final items = await FrameRunner(config: config, runner: IoProcessRunner(), logger: logger).run(job);
-    logger.info('Framed ${items.length} screenshots -> ${p.relative(config.framedDir)}');
+    await frame(BrandifyConfig.load(a['config'] as String), logger,
+        devices: (a['device'] as List<String>).toSet(), locales: (a['locale'] as List<String>).toSet());
     return 0;
   }
+}
+
+/// The frame step, shared by `frame` and `build`. Returns how many it framed.
+Future<int> frame(BrandifyConfig config, Logger logger,
+    {Set<String> devices = const {}, Set<String> locales = const {}}) async {
+  final job = FrameJob.build(config, devices: devices, locales: locales, logger: logger);
+  final items = await FrameRunner(config: config, runner: IoProcessRunner(), logger: logger).run(job);
+  logger.info('Framed ${items.length} screenshots -> ${p.relative(config.framedDir)}');
+  return items.length;
 }

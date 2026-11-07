@@ -123,7 +123,7 @@ class Initializer {
     if (!hasMain) logger.info('  ${++n}. Start your app in integration_test/brandify_test.dart (see the TODO).');
     logger.info('  ${++n}. Add a shot(\'...\') per screenshot, and a caption per shot in brandify.yaml.');
     logger.info('  ${++n}. dart run brandify doctor');
-    logger.info('  ${++n}. dart run brandify capture && dart run brandify frame && dart run brandify export');
+    logger.info('  ${++n}. dart run brandify build    (capture, frame and export)');
     return [config, test];
   }
 

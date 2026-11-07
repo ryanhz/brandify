@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:args/command_runner.dart';
 
+import 'commands/build_command.dart';
 import 'commands/capture_command.dart';
 import 'commands/doctor_command.dart';
 import 'commands/export_command.dart';
@@ -22,7 +23,8 @@ Future<int> runBrandify(List<String> args) async {
     ..addCommand(DoctorCommand())
     ..addCommand(CaptureCommand())
     ..addCommand(FrameCommand())
-    ..addCommand(ExportCommand());
+    ..addCommand(ExportCommand())
+    ..addCommand(BuildCommand());
 
   try {
     final results = runner.parse(args);

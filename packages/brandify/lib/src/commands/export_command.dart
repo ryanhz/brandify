@@ -29,12 +29,19 @@ class ExportCommand extends Command<int> {
   Future<int> run() async {
     final a = argResults!;
     final logger = Logger(verbose: a['verbose'] as bool);
-    final config = BrandifyConfig.load(a['config'] as String);
-    final written = FastlaneExporter(config: config, logger: logger).run(
+    export(BrandifyConfig.load(a['config'] as String), logger,
         devices: (a['device'] as List<String>).toSet(),
         locales: (a['locale'] as List<String>).toSet(),
         replace: a['replace'] as bool);
-    logger.info('Exported ${written.length} screenshots -> ${p.relative(config.fastlaneDir)}');
     return 0;
   }
+}
+
+/// The export step, shared by `export` and `build`. Returns how many it wrote.
+int export(BrandifyConfig config, Logger logger,
+    {Set<String> devices = const {}, Set<String> locales = const {}, bool replace = false}) {
+  final written =
+      FastlaneExporter(config: config, logger: logger).run(devices: devices, locales: locales, replace: replace);
+  logger.info('Exported ${written.length} screenshots -> ${p.relative(config.fastlaneDir)}');
+  return written.length;
 }
