@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 
 import 'commands/capture_command.dart';
+import 'commands/doctor_command.dart';
 import 'commands/export_command.dart';
 import 'commands/frame_command.dart';
+import 'commands/init_command.dart';
 import 'process.dart';
 
 const brandifyVersion = '0.0.1';
@@ -16,6 +18,8 @@ Future<int> runBrandify(List<String> args) async {
     'Turn an unbranded Flutter app into store-ready assets.',
   )
     ..argParser.addFlag('version', negatable: false, help: 'Print the version.')
+    ..addCommand(InitCommand())
+    ..addCommand(DoctorCommand())
     ..addCommand(CaptureCommand())
     ..addCommand(FrameCommand())
     ..addCommand(ExportCommand());

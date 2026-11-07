@@ -57,6 +57,18 @@ the right device geometry renders almost the same pixels and is much faster.
 
 ## Usage (current)
 
+In your Flutter app's folder:
+
+```bash
+flutter pub add dev:brandify dev:brandify_flutter
+dart run brandify init     # writes brandify.yaml and integration_test/brandify_test.dart
+dart run brandify doctor   # checks Flutter, the config, Android SDK/AVDs, Xcode/simulators, fastlane
+```
+
+`init` picks an existing AVD if it finds one and never overwrites files (`--force` does). `doctor`
+only reads: it lists every problem with what to do about it, and exits 1 if a capture would fail.
+iOS devices on a machine without macOS are a warning; capture skips them there.
+
 `brandify.yaml` next to your `pubspec.yaml`:
 
 ```yaml
