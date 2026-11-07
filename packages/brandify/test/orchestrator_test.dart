@@ -106,7 +106,7 @@ capture: {port: 47999, stable_interval_ms: 0}
     expect(session.teardowns, 1);
     expect(runner.started, hasLength(2));
     expect(runner.started.first,
-        allOf(startsWith('flutter test integration_test/brandify_test.dart -d fake-1'),
+        allOf(startsWith('flutter test integration_test/brandify_test.dart -d fake-1 --no-pub'),
             contains('--dart-define=BRANDIFY_LOCALE=en-US')));
     final dir = p.join(root.path, 'build/brandify/raw/phone/de-DE');
     expect(File(p.join(dir, 'home.png')).existsSync(), isTrue);

@@ -11,6 +11,7 @@ import '../device/device.dart';
 import '../device/ios.dart';
 import '../logger.dart';
 import '../process.dart';
+import '../pub.dart';
 import 'server.dart';
 import 'stable.dart';
 
@@ -78,6 +79,8 @@ class CaptureOrchestrator {
           'Capture test ${config.capture.test} not found in ${config.root} (capture.test).');
     }
 
+    await ensurePackages(root: config.root, runner: runner, logger: logger, flutter: flutter);
+
     final results = <CaptureResult>[];
     for (final device in config.devices.where((d) => selectedDevices.contains(d.id))) {
       final session = await driverFactory(device).prepare(port: config.capture.port);
@@ -136,7 +139,7 @@ class CaptureOrchestrator {
     try {
       logger.info('$tag running ${cap.test} on ${session.flutterDeviceId}');
       final args = [
-        'test', cap.test, '-d', session.flutterDeviceId, //
+        'test', cap.test, '-d', session.flutterDeviceId, '--no-pub', //
         '--dart-define=BRANDIFY_PORT=${cap.port}',
         '--dart-define=BRANDIFY_RUN=$runId',
         '--dart-define=BRANDIFY_LOCALE=$locale',

@@ -159,7 +159,12 @@ frame:
       expect(() => FrameJob.build(config(''), logger: logger), throwsBp('No App Store screenshot slot'));
     });
 
+    void resolved() => File(p.join(root.path, '.dart_tool/package_config.json'))
+      ..createSync(recursive: true)
+      ..writeAsStringSync('{}');
+
     test('runner writes job + test, runs flutter test, checks output sizes', () async {
+      resolved();
       capture('pixel', 'en-US', ['home']);
       final stale = File(p.join(root.path, 'build/brandify/framed/pixel/en-US/old.png'))
         ..createSync(recursive: true);
@@ -181,7 +186,7 @@ frame:
       await r.run(job);
       expect(stale.existsSync(), isFalse);
       expect(runner.calls.single,
-          startsWith('flutter test build/brandify/frame/brandify_frame_test.dart --dart-define=BRANDIFY_FRAME_JOB='));
+          startsWith('flutter test build/brandify/frame/brandify_frame_test.dart --no-pub --dart-define=BRANDIFY_FRAME_JOB='));
       expect(File(p.join(root.path, 'build/brandify/frame/brandify_frame_test.dart')).readAsStringSync(),
           contains('brandifyFrameMain()'));
       expect(out.lines.join('\n'), contains('Google Play phone (1080×1920): 1 framed'));
@@ -191,6 +196,7 @@ frame:
     });
 
     test('runner reports flutter test failures with a dependency hint', () async {
+      resolved();
       capture('pixel', 'en-US', ['home']);
       final cfg = config('');
       final runner = FakeRunner([

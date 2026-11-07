@@ -7,6 +7,7 @@ import '../config.dart';
 import '../logger.dart';
 import '../png.dart';
 import '../process.dart';
+import '../pub.dart';
 import 'frame_job.dart';
 
 /// The widget test `brandify frame` generates in the app's project. It
@@ -55,9 +56,10 @@ class FrameRunner {
     File(testFile).writeAsStringSync(frameRunnerSource);
 
     final args = [
-      'test', p.relative(testFile, from: config.root), //
+      'test', p.relative(testFile, from: config.root), '--no-pub', //
       '--dart-define=BRANDIFY_FRAME_JOB=$jobFile',
     ];
+    await ensurePackages(root: config.root, runner: runner, logger: logger, flutter: flutter);
     logger.info('framing ${job.items.length} screenshots');
     logger.detail('$flutter ${args.join(' ')}');
     final r = await runner.run(flutter, args, timeout: timeout, workingDirectory: config.root);
