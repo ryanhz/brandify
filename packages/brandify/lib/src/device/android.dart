@@ -12,7 +12,8 @@ import '../process.dart';
 import 'device.dart';
 
 /// Paths to `adb` and `emulator`: from `$ANDROID_HOME` / `$ANDROID_SDK_ROOT`
-/// when set, otherwise whatever is on PATH.
+/// when set, else the SDK's default install folder (as Android Studio and
+/// Flutter use it), else whatever is on PATH.
 class AndroidSdk {
   AndroidSdk({required this.adb, required this.emulator});
   final String adb;
@@ -21,9 +22,7 @@ class AndroidSdk {
   factory AndroidSdk.locate([Map<String, String>? env]) {
     env ??= Platform.environment;
     final exe = Platform.isWindows ? '.exe' : '';
-    for (final key in ['ANDROID_HOME', 'ANDROID_SDK_ROOT']) {
-      final home = env[key];
-      if (home == null || home.isEmpty) continue;
+    for (final home in sdkCandidates(env)) {
       final adb = p.join(home, 'platform-tools', 'adb$exe');
       final emu = p.join(home, 'emulator', 'emulator$exe');
       if (File(adb).existsSync()) {
@@ -32,6 +31,22 @@ class AndroidSdk {
       }
     }
     return AndroidSdk(adb: 'adb', emulator: 'emulator');
+  }
+
+  /// Where to look for the SDK, in order: `$ANDROID_HOME`,
+  /// `$ANDROID_SDK_ROOT`, then the default folders (macOS
+  /// `~/Library/Android/sdk`, Linux `~/Android/Sdk`, Windows
+  /// `%LOCALAPPDATA%\Android\Sdk`).
+  static List<String> sdkCandidates(Map<String, String> env) {
+    String? nonEmpty(String? s) => s == null || s.isEmpty ? null : s;
+    final home = nonEmpty(env['HOME']) ?? nonEmpty(env['USERPROFILE']);
+    final local = nonEmpty(env['LOCALAPPDATA']);
+    return [
+      for (final key in ['ANDROID_HOME', 'ANDROID_SDK_ROOT'])
+        if (nonEmpty(env[key]) case final dir?) dir,
+      if (home != null) ...[p.join(home, 'Library', 'Android', 'sdk'), p.join(home, 'Android', 'Sdk')],
+      if (local != null) p.join(local, 'Android', 'Sdk'),
+    ];
   }
 }
 

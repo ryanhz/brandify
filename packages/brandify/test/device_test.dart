@@ -7,6 +7,7 @@ import 'package:brandify/src/device/ios.dart';
 import 'package:brandify/src/logger.dart';
 import 'package:brandify/src/process.dart';
 import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'fakes.dart';
@@ -28,6 +29,27 @@ CommandResult? _androidShell(String exe, List<String> a) {
 }
 
 void main() {
+  group('Android SDK discovery', () {
+    test('env vars first, then the default folders', () {
+      expect(AndroidSdk.sdkCandidates({'ANDROID_SDK_ROOT': '/r', 'ANDROID_HOME': '/h', 'HOME': '/u'}),
+          ['/h', '/r', p.join('/u', 'Library', 'Android', 'sdk'), p.join('/u', 'Android', 'Sdk')]);
+      expect(AndroidSdk.sdkCandidates({'ANDROID_HOME': '', 'HOME': '/u'}).first,
+          p.join('/u', 'Library', 'Android', 'sdk'));
+    });
+
+    test('finds the SDK in ~/Library/Android/sdk with no env var set', () {
+      final home = Directory.systemTemp.createTempSync('brandify_home');
+      addTearDown(() => home.deleteSync(recursive: true));
+      final sdk = p.join(home.path, 'Library', 'Android', 'sdk');
+      File(p.join(sdk, 'platform-tools', 'adb')).createSync(recursive: true);
+      File(p.join(sdk, 'emulator', 'emulator')).createSync(recursive: true);
+      final found = AndroidSdk.locate({'HOME': home.path});
+      expect(found.adb, p.join(sdk, 'platform-tools', 'adb'));
+      expect(found.emulator, p.join(sdk, 'emulator', 'emulator'));
+      expect(AndroidSdk.locate({'HOME': p.join(home.path, 'none')}).adb, 'adb', reason: 'falls back to PATH');
+    });
+  });
+
   group('android', () {
     test('serial device: demo mode with mobile hidden, adb reverse, teardown restores', () async {
       final r = FakeRunner([

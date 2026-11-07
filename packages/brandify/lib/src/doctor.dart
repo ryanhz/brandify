@@ -198,7 +198,8 @@ class Doctor {
     if (adb == null || adb.exitCode != 0) {
       return [
         _unavailable('Android: adb not found', devices,
-            fix: 'Install the Android SDK platform-tools and set ANDROID_HOME (or put adb on PATH).')
+            fix: 'Install the Android SDK platform-tools. brandify looks in \$ANDROID_HOME, \$ANDROID_SDK_ROOT, '
+                '~/Library/Android/sdk, ~/Android/Sdk, then PATH.')
       ];
     }
     final checks = [
@@ -209,7 +210,7 @@ class Doctor {
     final list = await _try(sdk.emulator, ['-list-avds']);
     if (list == null || list.exitCode != 0) {
       checks.add(Check(avds.isEmpty ? CheckStatus.warn : CheckStatus.fail, 'Android: emulator not found',
-          hint: 'Install the Android Emulator (sdkmanager "emulator") and set ANDROID_HOME.'));
+          hint: 'Install the Android Emulator (sdkmanager "emulator") into the SDK that has adb.'));
     } else {
       final names = parseAvdList(list.stdout);
       if (devices.isEmpty) {
