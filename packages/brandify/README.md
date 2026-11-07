@@ -8,7 +8,7 @@ brandify turns your Flutter app into store screenshots taken from a **real simul
 driven by an `integration_test` script and run unattended with one command:
 
 ```bash
-dart run brandify capture && dart run brandify frame && dart run brandify export
+dart run brandify build    # capture → frame → export
 ```
 
 ## Why real capture
@@ -75,6 +75,7 @@ capture test and the framing step use. Neither ends up in your release app.
 ```bash
 dart run brandify init     # writes brandify.yaml and integration_test/brandify_test.dart
 dart run brandify doctor   # checks that a capture can run on this machine
+dart run brandify build    # all three steps below, in one unattended run
 dart run brandify capture  # raw screenshots, from the emulator / simulator
 dart run brandify frame    # store slides
 dart run brandify export   # into fastlane's folders
@@ -82,11 +83,22 @@ dart run brandify export   # into fastlane's folders
 
 `init` picks an existing AVD if it finds one and never overwrites files (`--force` does).
 
+### `brandify build`
+
+Runs capture, frame and export in sequence and stops at the first step that fails, naming it
+(`error: build stopped at frame: …`). It takes the options of the three steps: `-d` and `-l` select
+devices and locales as for capture, and `--replace` is passed to export. Frame and export then work
+on exactly what this capture produced, so older captures of other devices or locales left in
+`build/brandify/raw/` are not framed or exported. Run the steps on their own to redo one, e.g.
+`frame` after changing a caption.
+
 ### `brandify doctor`
 
 Checks Flutter (3.35.3 or newer), that your app depends on `brandify_flutter`, `brandify.yaml` and
 the capture test, the Android SDK (`adb`, `emulator`, each configured AVD), Xcode and each configured
-simulator, and fastlane (optional). It only reads: nothing is booted or changed. Every problem comes
+simulator, and fastlane (optional). The Android SDK is found like Flutter finds it: `$ANDROID_HOME`,
+`$ANDROID_SDK_ROOT`, Android Studio's default folder (`~/Library/Android/sdk` on macOS,
+`~/Android/Sdk` on Linux, `%LOCALAPPDATA%\Android\Sdk` on Windows), then `PATH`. It only reads: nothing is booted or changed. Every problem comes
 with what to do about it, and it exits 1 if a capture would fail.
 
 A device this machine can't run is a warning, not a failure, because `capture` skips it: an iOS

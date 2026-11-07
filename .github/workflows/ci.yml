@@ -102,9 +102,9 @@ jobs:
           grep -qx "$AVD" avds.txt || { echo "AVD $AVD not listed"; exit 1; }
           rm avds.txt
       - run: flutter pub get
-      - name: Example app (doctor, capture, frame, export)
+      - name: Example app (doctor, build)
         run: tool/e2e.sh example android
-      - name: Fresh app (flutter create, init, capture, frame, export)
+      - name: Fresh app (flutter create, init, doctor, build)
         run: tool/e2e.sh fresh android
         env:
           BRANDIFY_E2E_AVD: ${{ env.AVD }}
@@ -144,9 +144,9 @@ jobs:
           xcodebuild -version
           xcrun simctl list devices available | grep -i "iphone 17 pro max"
       - run: flutter pub get
-      - name: Example app (doctor, capture, frame, export)
+      - name: Example app (doctor, build)
         run: tool/e2e.sh example ios
-      - name: Fresh app (flutter create, init, capture, frame, export)
+      - name: Fresh app (flutter create, init, doctor, build)
         run: tool/e2e.sh fresh ios
         env:
           BRANDIFY_E2E_DIR: ${{ runner.temp }}

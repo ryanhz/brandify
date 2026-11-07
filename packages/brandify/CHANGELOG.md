@@ -13,6 +13,10 @@ First release.
   warning unless named with `-d`. Dependencies are resolved once; tests run with `--no-pub`.
 - `brandify frame`: composes store slides (`caption_top` template, gradient background, captions
   per locale, custom font) at the exact Google Play and App Store slot sizes.
+- `brandify build`: capture, frame and export in one run, on exactly what was captured; stops at
+  the first step that fails and names it.
+- Android SDK: found in `$ANDROID_HOME`, `$ANDROID_SDK_ROOT`, Android Studio's default folder, then
+  `PATH`.
 - `brandify export`: copies the slides into fastlane's `supply` / `deliver` folders, maps locales to
   each store's codes, checks sizes, counts and alpha, and records what it wrote (with SHA-256) so a
   later export replaces only its own files.

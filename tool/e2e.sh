@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check of the brandify pipeline on a real emulator or simulator:
-# doctor, capture, frame and export, then checks every output file and its size.
+# doctor, then build (capture, frame, export), then checks every output file and
+# its size.
 #
 #   tool/e2e.sh fresh android     # `flutter create` app + `brandify init`
 #   tool/e2e.sh example ios       # the example app in this repo
@@ -63,12 +64,8 @@ fi
 
 step "brandify doctor -d $device"
 dart run brandify doctor -d "$device"
-step "brandify capture -d $device"
-dart run brandify capture -d "$device"
-step "brandify frame -d $device"
-dart run brandify frame -d "$device"
-step "brandify export -d $device --replace"
-dart run brandify export -d "$device" --replace
+step "brandify build -d $device --replace"
+dart run brandify build -d "$device" --replace
 
 # -- checks ---------------------------------------------------------------------
 
@@ -91,6 +88,10 @@ def digest(path):
     with open(path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
 
+def visible(d):
+    """Entries of d, without hidden files such as macOS's .DS_Store."""
+    return sorted(f for f in os.listdir(d) if not f.startswith("."))
+
 def store_files(locale):
     if platform == "android":
         d = os.path.join(app, "fastlane/metadata/android", locale, "images/phoneScreenshots")
@@ -98,15 +99,16 @@ def store_files(locale):
         d = os.path.join(app, "fastlane/screenshots", locale)
     if not os.path.isdir(d):
         sys.exit(f"FAIL: no export folder {d}")
-    return {f: os.path.join(d, f) for f in os.listdir(d) if f.endswith(".png")}
+    return {f: os.path.join(d, f) for f in visible(d) if f.endswith(".png")}
 
-locales = sorted(os.listdir(raw_root)) if os.path.isdir(raw_root) else []
+locales = [l for l in visible(raw_root) if os.path.isdir(os.path.join(raw_root, l))] \
+    if os.path.isdir(raw_root) else []
 if not locales:
     sys.exit(f"FAIL: no captures in {raw_root}")
 total = 0
 for locale in locales:
     raw_dir = os.path.join(raw_root, locale)
-    shots = sorted(f for f in os.listdir(raw_dir) if f.endswith(".png"))
+    shots = [f for f in visible(raw_dir) if f.endswith(".png")]
     if not shots:
         sys.exit(f"FAIL: no PNGs in {raw_dir}")
     exported = store_files(locale)
