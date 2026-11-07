@@ -181,7 +181,7 @@ class FrameJob {
             width: size.width,
             height: size.height,
             dpr: dpr,
-            slot: slotFor(device.platform, size.width, size.height),
+            slot: slotFor(device.platform, size.width, size.height, dpr: dpr),
             caption: byShot?[name],
           );
         }(),

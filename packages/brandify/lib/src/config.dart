@@ -4,6 +4,8 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 import 'process.dart';
+import 'store/locales.dart';
+import 'store/slots.dart';
 
 class ConfigException extends BrandifyException {
   ConfigException(super.message);
@@ -17,7 +19,9 @@ class BrandifyConfig {
     required this.devices,
     required this.capture,
     FrameConfig? frame,
-  }) : frame = frame ?? FrameConfig();
+    ExportConfig? export,
+  })  : frame = frame ?? FrameConfig(),
+        export = export ?? ExportConfig();
 
   /// Directory holding `brandify.yaml`; relative paths resolve against it.
   final String root;
@@ -25,12 +29,15 @@ class BrandifyConfig {
   final List<DeviceConfig> devices;
   final CaptureConfig capture;
   final FrameConfig frame;
+  final ExportConfig export;
 
   String get outputDir => p.normalize(p.join(root, capture.output));
 
   String get framedDir => p.normalize(p.join(root, frame.output));
 
-  static const _topKeys = {'app', 'locales', 'devices', 'capture', 'frame'};
+  String get fastlaneDir => p.normalize(p.join(root, export.output));
+
+  static const _topKeys = {'app', 'locales', 'devices', 'capture', 'frame', 'export'};
 
   static BrandifyConfig load(String path) {
     final file = File(path);
@@ -86,8 +93,18 @@ class BrandifyConfig {
         ? FrameConfig()
         : FrameConfig._parse(_map(frameNode, 'frame'), locales);
 
+    final exportNode = top.nodes['export'];
+    final export = exportNode == null
+        ? ExportConfig()
+        : ExportConfig._parse(_map(exportNode, 'export'), locales);
+
     return BrandifyConfig(
-        root: root, locales: locales, devices: devices, capture: capture, frame: frame);
+        root: root,
+        locales: locales,
+        devices: devices,
+        capture: capture,
+        frame: frame,
+        export: export);
   }
 }
 
@@ -341,6 +358,53 @@ class FrameConfig {
       font: _string(m, 'font'),
       captions: captions,
     );
+  }
+}
+
+/// `export:`. Every key is optional.
+///
+/// ```yaml
+/// export:
+///   output: fastlane              # the fastlane folder, relative to brandify.yaml
+///   locales:                      # only where the automatic mapping can't decide
+///     de-AT: {play: de-DE, app_store: de-DE}
+///     ur-PK: {play: none}         # leave this locale out of Google Play
+/// ```
+class ExportConfig {
+  ExportConfig({this.output = 'fastlane', this.locales = const {}});
+
+  final String output;
+
+  /// locale -> store -> store locale code, or null to skip the locale there.
+  final Map<String, Map<Store, String?>> locales;
+
+  static ExportConfig _parse(YamlMap m, List<String> configLocales) {
+    _rejectUnknown(m, {'output', 'locales'});
+    final overrides = <String, Map<Store, String?>>{};
+    final ln = m.nodes['locales'];
+    if (ln != null) {
+      for (final MapEntry(key: k, value: v) in _map(ln, '`export.locales`').nodes.entries) {
+        final locale = _scalarString(k as YamlNode, 'export.locales locale');
+        if (!configLocales.contains(locale)) {
+          throw _err(k, 'export.locales names "$locale", which is not in `locales` '
+              '(${configLocales.join(', ')}).');
+        }
+        final vm = _map(v, 'export.locales.$locale');
+        _rejectUnknown(vm, {'play', 'app_store'});
+        final byStore = <Store, String?>{};
+        for (final (key, store) in [('play', Store.play), ('app_store', Store.appStore)]) {
+          final code = _string(vm, key);
+          if (code == null) continue;
+          if (code != 'none' && !localesOf(store).contains(code)) {
+            throw _err(vm.nodes[key]!, '"$code" is not a ${store.label} listing language. '
+                'Known: ${(localesOf(store).toList()..sort()).join(', ')}.');
+          }
+          byStore[store] = code == 'none' ? null : code;
+        }
+        overrides[locale] = byStore;
+      }
+    }
+    return ExportConfig(output: _string(m, 'output') ?? 'fastlane', locales: overrides);
   }
 }
 

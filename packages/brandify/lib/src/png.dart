@@ -41,3 +41,31 @@ bool samePixels(Uint8List a, Uint8List b) {
   return sameBytes(ia.getBytes(order: img.ChannelOrder.rgba),
       ib.getBytes(order: img.ChannelOrder.rgba));
 }
+
+/// True if the PNG can carry transparency: an alpha channel (colour types 4
+/// and 6) or a `tRNS` chunk. Both stores reject such screenshots.
+bool pngHasAlpha(List<int> bytes) {
+  if (!isPng(bytes)) return false;
+  final colorType = bytes[25];
+  if (colorType == 4 || colorType == 6) return true;
+  var o = 8;
+  while (o + 8 <= bytes.length) {
+    final len = (bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3];
+    final type = String.fromCharCodes(bytes.sublist(o + 4, o + 8));
+    if (type == 'tRNS') return true;
+    if (type == 'IDAT' || type == 'IEND') return false;
+    o += 12 + len;
+  }
+  return false;
+}
+
+/// [bytes] re-encoded without an alpha channel, if every pixel is opaque;
+/// null if any pixel is (partly) transparent.
+Uint8List? flattenOpaquePng(Uint8List bytes) {
+  final image = img.decodePng(bytes);
+  if (image == null) return null;
+  for (final px in image) {
+    if (px.a < px.maxChannelValue) return null;
+  }
+  return img.encodePng(image.convert(numChannels: 3));
+}

@@ -36,11 +36,29 @@ void main() {
       expect(slotFor(DevicePlatform.ios, 1290, 2796).id, 'appstore_iphone_69');
       expect(slotFor(DevicePlatform.ios, 1284, 2778).id, 'appstore_iphone_65');
       expect(slotFor(DevicePlatform.ios, 2064, 2752).id, 'appstore_ipad_13');
+      expect(slotFor(DevicePlatform.ios, 1206, 2622).id, 'appstore_iphone_63'); // iPhone 17 Pro
+      expect(slotFor(DevicePlatform.ios, 1179, 2556).id, 'appstore_iphone_63');
+      expect(slotFor(DevicePlatform.ios, 1170, 2532).id, 'appstore_iphone_61');
+      expect(slotFor(DevicePlatform.ios, 1242, 2208).id, 'appstore_iphone_55');
+      expect(slotFor(DevicePlatform.ios, 1668, 2420).id, 'appstore_ipad_11');
+      expect(slotFor(DevicePlatform.ios, 1320, 2868).store, Store.appStore);
       final s = slotFor(DevicePlatform.ios, 1320, 2868);
       expect((s.width, s.height), (1320, 2868));
     });
+    test('Android: phone or tablet by smallest width in dp', () {
+      // Pixel 8 (412 dp), unknown dpr -> phone.
+      expect(slotFor(DevicePlatform.android, 1080, 2400, dpr: 2.625).id, 'play_phone');
+      expect(slotFor(DevicePlatform.android, 1080, 2400).id, 'play_phone');
+      // Nexus 7 class (600 dp) and Pixel Tablet (800 dp), portrait.
+      final t7 = slotFor(DevicePlatform.android, 1200, 1920, dpr: 2);
+      expect((t7.id, t7.fastlaneFolder, t7.width, t7.height),
+          ('play_tablet_7', 'sevenInchScreenshots', 1200, 2133));
+      final t10 = slotFor(DevicePlatform.android, 1600, 2560, dpr: 2);
+      expect((t10.id, t10.fastlaneFolder, t10.height), ('play_tablet_10', 'tenInchScreenshots', 2844));
+      expect(slotFor(DevicePlatform.android, 1080, 2400).fastlaneFolder, 'phoneScreenshots');
+    });
     test('rejects what no slot takes', () {
-      expect(() => slotFor(DevicePlatform.ios, 1179, 2556), throwsBp('6.9"'));
+      expect(() => slotFor(DevicePlatform.ios, 1000, 2000), throwsBp('6.9"'));
       expect(() => slotFor(DevicePlatform.android, 2400, 1080), throwsBp('landscape'));
       expect(() => slotFor(DevicePlatform.android, 2400, 5000), throwsBp('320–3840'));
     });
@@ -137,7 +155,7 @@ frame:
     });
 
     test('iOS capture off the slot table is rejected before running flutter', () {
-      capture('iphone', 'en-US', ['home'], w: 1179, h: 2556);
+      capture('iphone', 'en-US', ['home'], w: 1000, h: 2000);
       expect(() => FrameJob.build(config(''), logger: logger), throwsBp('No App Store screenshot slot'));
     });
 

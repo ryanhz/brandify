@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 
 import 'commands/capture_command.dart';
+import 'commands/export_command.dart';
 import 'commands/frame_command.dart';
 import 'process.dart';
 
@@ -16,7 +17,8 @@ Future<int> runBrandify(List<String> args) async {
   )
     ..argParser.addFlag('version', negatable: false, help: 'Print the version.')
     ..addCommand(CaptureCommand())
-    ..addCommand(FrameCommand());
+    ..addCommand(FrameCommand())
+    ..addCommand(ExportCommand());
 
   try {
     final results = runner.parse(args);

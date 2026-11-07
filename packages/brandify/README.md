@@ -1,7 +1,8 @@
 # brandify
 
-**Status: pre-release.** Capture works on Android emulators and iOS simulators; framing works
-(verified on Android captures); store export is in progress.
+**Status: pre-release.** Capture works on Android emulators and iOS simulators; framing works on
+real Android and iOS captures; export writes the folders fastlane uploads from (Google Play upload
+through fastlane not yet tried).
 
 brandify turns your Flutter app into store screenshots taken from a **real simulator or emulator**,
 driven by an `integration_test` script and run unattended with one command:
@@ -93,9 +94,9 @@ Raw screenshots and a manifest land in `build/brandify/raw/<device>/<locale>/`.
 dart run brandify frame
 ```
 
-Frames every raw capture for its store slot (Android: Google Play phone, 9:16 at the capture's width,
-e.g. 1080×1920; iOS: the App Store display class whose size the capture already has, e.g. 6.9"
-1320×2868) into `build/brandify/framed/<device>/<locale>/`. Optional `frame:` section:
+Frames every raw capture for its store slot (Android: Google Play phone, 7" or 10" tablet by the
+device's smallest width, 9:16 at the capture's width, e.g. 1080×1920; iOS: the App Store display
+class whose size the capture already has, e.g. 6.9" 1320×2868, 6.3", iPad 13") into `build/brandify/framed/<device>/<locale>/`. Optional `frame:` section:
 
 ```yaml
 frame:
@@ -118,3 +119,38 @@ as tall as the device's tallest caption (`auto`), or the share you set. A captio
 The compositor is [app_deploy_screenshots](https://pub.dev/packages/app_deploy_screenshots)'
 `MarketingFrame`, run in a widget test brandify generates on the host. The screen it frames is the
 real capture, re-rendered pixel for pixel; brandify never draws a status bar or camera cutout over it.
+
+### Export to fastlane
+
+```bash
+dart run brandify export
+```
+
+Copies the framed screenshots to where fastlane uploads them from, next to `brandify.yaml`:
+
+| Store | Folder | Tool |
+|---|---|---|
+| Google Play | `fastlane/metadata/android/<locale>/images/{phone,sevenInch,tenInch}Screenshots/` | `supply` |
+| App Store | `fastlane/screenshots/<locale>/` (display class told apart by pixel size) | `deliver` |
+
+- **Names:** `{n}_{name}.png` in the order your test shot them (`1_home.png`, `2_add_task.png`;
+  `01_…` when a slot has 10), so both tools upload in that order. Several iOS devices in one
+  locale get a device prefix (`iphone69_1_home.png`, `ipad13_1_home.png`).
+- **Locales:** your BCP 47 tags are mapped to each store's code: `zh-Hans` → Play `zh-CN`,
+  App Store `zh-Hans`; `ja-JP` → App Store `ja`; `he` → Play `iw-IL`; `es-MX` → Play `es-419`.
+  brandify never guesses: a tag a store doesn't have (e.g. `de-AT`) is an error until you set it:
+
+  ```yaml
+  export:
+    output: fastlane                  # default
+    locales:
+      de-AT: {play: de-DE, app_store: de-DE}
+      ur-PK: {play: none}             # leave this locale out of Google Play
+  ```
+- **Checks:** before writing, every framed image must exist, be newer than its capture and have its
+  slot's size; at most 8 per Play device type and 10 per App Store display class. After writing,
+  each file is read back: exact slot size, the store's size rules, no alpha channel (both stores
+  reject one; opaque RGBA is flattened), Play's 8 MB limit. Warnings for fewer than 2 Play phone
+  screenshots, and for App Store sets without the required 6.9"/6.5" iPhone or 13" iPad class.
+- **Clean folders:** the screenshot folders being written are cleared of old images first (for the
+  App Store, only images of the display classes being written). Text metadata is never touched.
