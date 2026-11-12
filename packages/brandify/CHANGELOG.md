@@ -1,4 +1,4 @@
-## Unreleased
+## 0.2.2
 
 - `capture` and `frame` run `flutter pub get` when Flutter's plugin list
   (`.flutter-plugins-dependencies`) is missing or older than `pubspec.yaml`, not only when the
