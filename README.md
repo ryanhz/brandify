@@ -2,9 +2,10 @@
 
 [![CI](https://github.com/ryanhz/brandify/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanhz/brandify/actions/workflows/ci.yml)
 
-Store screenshots for Flutter apps, taken from a **real simulator or emulator** and driven by
-`integration_test`: capture, frame for each store slot, and export into fastlane's folders, in one
-unattended `brandify build`.
+From an unbranded Flutter app to a branded store presence: store screenshots taken from a **real
+simulator or emulator** and driven by `integration_test` (capture, frame for each store slot, and
+export into fastlane's folders, in one unattended `brandify build`), plus the app's name and IDs,
+launcher icons and store listing text.
 
 If your app embeds native views (`PlatformView`: maps, 3D, camera previews, native ads, WebView),
 widget-test screenshot tools render them as a black hole and don't tell you. brandify screenshots

@@ -4,12 +4,27 @@
 simulators. `export` and `metadata` write the folders fastlane uploads from; uploading them with
 `supply` / `deliver` has not been tried yet.
 
-brandify turns your Flutter app into store screenshots taken from a **real simulator or emulator**,
-driven by an `integration_test` script and run unattended with one command:
+brandify takes an unbranded Flutter app to a branded store presence. You describe the app in one
+`brandify.yaml`, and each part is one command:
+
+| Command | What it does |
+|---|---|
+| `init` | Writes `brandify.yaml` (with `app:` and `metadata:` to fill in) and a capture test |
+| `doctor` | Checks the tools, devices and config; changes nothing |
+| `build` | Store screenshots: `capture` → `frame` → `export`, in one unattended run |
+| `rename` | Sets the display name, Android package and iOS bundle ID in `android/` and `ios/` (dry run unless `--force`) |
+| `icons` | Makes the Android and iOS launcher icons from your logo (via flutter_launcher_icons) |
+| `metadata` | Writes the store listing text (name, subtitle, description, keywords, release notes) for fastlane |
+
+The screenshots are taken from a **real simulator or emulator**, driven by an `integration_test`
+script:
 
 ```bash
 dart run brandify build    # capture → frame → export
 ```
+
+See [App identity and store listing](#app-identity-and-store-listing) for `rename`, `icons` and
+`metadata`.
 
 ## Why real capture
 
