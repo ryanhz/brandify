@@ -1,4 +1,7 @@
 import 'package:flutter/foundation.dart';
+// Flutter 3.47+ moves Material to package:material_ui, but brandify supports Flutter
+// 3.35.3 and newer, so the example keeps the import that works on all of them.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 
 void main() => runApp(const BrandifyExampleApp());
