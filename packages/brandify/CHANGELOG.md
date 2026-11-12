@@ -1,3 +1,8 @@
+## 0.2.1
+
+- README: a table of every command at the top, with `rename`, `icons` and `metadata` alongside the
+  screenshot steps; the package description covers them too.
+
 ## 0.2.0
 
 From an unbranded app to a branded store presence: fill in `brandify.yaml`, then run one command

@@ -1,3 +1,8 @@
+## 0.2.1
+
+- Imports `package:flutter/widgets.dart` instead of `material.dart`, which Flutter 3.50 deprecates.
+  Works the same on every supported Flutter.
+
 ## 0.2.0
 
 No API changes. Released alongside brandify 0.2.0; use both packages at the same version.
