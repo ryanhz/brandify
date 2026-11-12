@@ -18,17 +18,29 @@ File? packageConfigFor(String root) {
   }
 }
 
-/// Whether [root]'s dependencies are resolved and newer than its
+/// Whether [root]'s dependencies are resolved for Flutter: the package config
+/// and `.flutter-plugins-dependencies` both exist and are newer than
 /// `pubspec.yaml` and the `pubspec.lock` next to the package config.
+///
+/// The package config alone isn't enough: `dart pub get` (which `dart run`
+/// does implicitly, e.g. right after `flutter clean`) writes it but not the
+/// plugin list, and a `flutter test --no-pub` then builds an Android app whose
+/// Gradle build can't find any plugin. Every app brandify captures has at
+/// least one plugin (integration_test), so the plugin list always exists once
+/// `flutter pub get` has run.
 bool packagesUpToDate(String root) {
   final config = packageConfigFor(root);
   if (config == null) return false;
-  final resolved = config.lastModifiedSync();
+  final plugins = File(p.join(root, '.flutter-plugins-dependencies'));
+  if (!plugins.existsSync()) return false;
   final inputs = [
     File(p.join(root, 'pubspec.yaml')),
     File(p.join(config.parent.parent.path, 'pubspec.lock')),
   ];
-  return inputs.every((f) => !f.existsSync() || !f.lastModifiedSync().isAfter(resolved));
+  return [config, plugins].every((out) {
+    final resolved = out.lastModifiedSync();
+    return inputs.every((f) => !f.existsSync() || !f.lastModifiedSync().isAfter(resolved));
+  });
 }
 
 /// Resolves dependencies once, only when they are out of date, so every

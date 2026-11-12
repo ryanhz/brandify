@@ -1,3 +1,11 @@
+## Unreleased
+
+- `capture` and `frame` run `flutter pub get` when Flutter's plugin list
+  (`.flutter-plugins-dependencies`) is missing or older than `pubspec.yaml`, not only when the
+  package config is. After `flutter clean`, a `dart run brandify …` restores the package config but
+  not the plugin list, and the Android build then failed with "package … does not exist" for
+  every plugin.
+
 ## 0.2.1
 
 - README: a table of every command at the top, with `rename`, `icons` and `metadata` alongside the

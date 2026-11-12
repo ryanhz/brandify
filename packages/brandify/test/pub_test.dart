@@ -48,14 +48,27 @@ void main() {
     write('pubspec.lock', at: t0);
     expect(packagesUpToDate(app), isFalse, reason: 'never resolved');
     write('.dart_tool/package_config.json', at: t1);
+    write('example/.flutter-plugins-dependencies', at: t1);
     expect(packagesUpToDate(app), isTrue);
     write('pubspec.lock', at: t1.add(const Duration(minutes: 1)));
     expect(packagesUpToDate(app), isFalse, reason: 'lock changed since');
   });
 
+  test('not up to date without a current Flutter plugin list', () {
+    write('example/pubspec.yaml', at: t0);
+    write('.dart_tool/package_config.json', at: t1);
+    expect(packagesUpToDate(app), isFalse,
+        reason: 'after flutter clean, dart pub get writes only the package config');
+    write('example/.flutter-plugins-dependencies', at: t0.subtract(const Duration(minutes: 1)));
+    expect(packagesUpToDate(app), isFalse, reason: 'plugin list older than pubspec.yaml');
+    write('example/.flutter-plugins-dependencies', at: t1);
+    expect(packagesUpToDate(app), isTrue);
+  });
+
   test('runs pub get only when needed, and explains a failure', () async {
     write('example/pubspec.yaml', at: t0);
     write('.dart_tool/package_config.json', at: t1);
+    write('example/.flutter-plugins-dependencies', at: t1);
     var runner = FakeRunner();
     await ensurePackages(root: app, runner: runner, logger: logger);
     expect(runner.calls, isEmpty);

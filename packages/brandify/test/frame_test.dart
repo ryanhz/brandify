@@ -159,9 +159,13 @@ frame:
       expect(() => FrameJob.build(config(''), logger: logger), throwsBp('No App Store screenshot slot'));
     });
 
-    void resolved() => File(p.join(root.path, '.dart_tool/package_config.json'))
-      ..createSync(recursive: true)
-      ..writeAsStringSync('{}');
+    void resolved() {
+      for (final f in ['.dart_tool/package_config.json', '.flutter-plugins-dependencies']) {
+        File(p.join(root.path, f))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('{}');
+      }
+    }
 
     test('runner writes job + test, runs flutter test, checks output sizes', () async {
       resolved();
