@@ -16,6 +16,16 @@ String brandifyYamlTemplate({required String avd, required bool avdFound}) => ''
 # brandify: store screenshots from a real emulator / simulator.
 # Run `dart run brandify doctor` to check this setup.
 
+# Your app's identity. Fill it in, then run (each is a separate command):
+#   dart run brandify rename   # name and IDs -> android/ and ios/ (dry run; --force applies)
+#   dart run brandify icons    # launcher icons from logo_path (needs dev:flutter_launcher_icons)
+# Empty fields are fine until you run the command that needs them.
+app:
+  name:              # shown under the launcher icon, e.g. Acme Tasks
+  android_package:   # Google Play applicationId, e.g. com.acme.tasks (fixed after the first upload)
+  ios_bundle_id:     # App Store bundle ID, e.g. com.acme.tasks (fixed after the first upload)
+  logo_path:         # square PNG, 1024×1024, relative to this file, e.g. assets/logo.png
+
 # BCP 47 tags; each becomes its own capture (the app runs with that locale).
 locales: [en-US]
 
@@ -36,6 +46,16 @@ frame:
   captions:
     en-US:
       home: {headline: Your headline here, subheadline: One line on what your app does}
+
+# Store listing text per locale (each one must be in `locales`).
+# `dart run brandify metadata` writes it into the fastlane folders for deliver / supply.
+metadata:
+  en-US:
+    name:            # App Store name and Play title; required, at most 30 characters
+    subtitle:        # App Store subtitle (optional, ≤ 30); Play short description (required, ≤ 80)
+    description:     # full description, both stores; required, ≤ 4000. Use `|` for several lines
+    keywords:        # App Store only, optional: [tasks, todo] or "tasks,todo", ≤ 100 bytes in all
+    release_notes:   # optional: App Store "What's New" (≤ 4000), Play changelog (≤ 500)
 
 # export:                            # `dart run brandify export` -> fastlane folders
 #   locales:                         # only where a locale has no automatic store code
@@ -124,6 +144,10 @@ class Initializer {
     logger.info('  ${++n}. Add a shot(\'...\') per screenshot, and a caption per shot in brandify.yaml.');
     logger.info('  ${++n}. dart run brandify doctor');
     logger.info('  ${++n}. dart run brandify build    (capture, frame and export)');
+    logger.info('  ${++n}. Fill in app: and metadata: in brandify.yaml, then, when you want them:\n'
+        '     dart run brandify rename     (name and IDs; commit first, it edits android/ and ios/)\n'
+        '     dart run brandify icons      (launcher icons; needs dev:flutter_launcher_icons)\n'
+        '     dart run brandify metadata   (store listing text -> fastlane)');
     return [config, test];
   }
 

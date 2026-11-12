@@ -7,7 +7,10 @@ import 'commands/capture_command.dart';
 import 'commands/doctor_command.dart';
 import 'commands/export_command.dart';
 import 'commands/frame_command.dart';
+import 'commands/icons_command.dart';
 import 'commands/init_command.dart';
+import 'commands/metadata_command.dart';
+import 'commands/rename_command.dart';
 import 'process.dart';
 
 const brandifyVersion = '0.1.0';
@@ -24,7 +27,10 @@ Future<int> runBrandify(List<String> args) async {
     ..addCommand(CaptureCommand())
     ..addCommand(FrameCommand())
     ..addCommand(ExportCommand())
-    ..addCommand(BuildCommand());
+    ..addCommand(BuildCommand())
+    ..addCommand(RenameCommand())
+    ..addCommand(IconsCommand())
+    ..addCommand(MetadataCommand());
 
   try {
     final results = runner.parse(args);

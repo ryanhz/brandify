@@ -7,6 +7,7 @@ import 'package:brandify/src/doctor.dart';
 import 'package:brandify/src/init.dart';
 import 'package:brandify/src/logger.dart';
 import 'package:brandify/src/process.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -70,6 +71,15 @@ void main() {
       expect((c.devices.first as AndroidDeviceConfig).avd, 'Pixel_9');
       expect((c.devices.last as IosDeviceConfig).simulator, 'iPhone 17 Pro Max');
       expect(c.frame.captions['en-US']!.keys, ['home']);
+      expect(c.app.missing(['name', 'android_package', 'ios_bundle_id', 'logo_path']), hasLength(4),
+          reason: 'app: is a template to fill in');
+      expect(c.metadata.keys, ['en-US']);
+      expect(LocaleMetadata.keys.every((k) => c.metadata['en-US']![k] == null), isTrue);
+      final yaml = read('brandify.yaml');
+      for (final k in ['name:', 'android_package:', 'ios_bundle_id:', 'logo_path:', 'subtitle:', 'keywords:',
+          'release_notes:', 'brandify rename', 'brandify icons', 'brandify metadata']) {
+        expect(yaml, contains(k));
+      }
       final t = read('integration_test/brandify_test.dart');
       expect(t, contains("import 'package:acme/main.dart' as app;"));
       expect(t, contains('app.main();'));
@@ -143,10 +153,12 @@ void main() {
                 devices: devices)
             .run();
 
+    const app = 'app: {name: Acme, android_package: com.acme.app, ios_bundle_id: com.acme.app}\n';
+
     void project({String devices = '[{id: pixel, platform: android, avd: Pixel_9}, '
-        '{id: iphone69, platform: ios, simulator: iPhone 17 Pro Max}]'}) {
+        '{id: iphone69, platform: ios, simulator: iPhone 17 Pro Max}]', String extra = app}) {
       write('pubspec.yaml', '$_pubspec  brandify_flutter: {path: x}\n');
-      write('brandify.yaml', 'locales: [en-US, de-DE]\ndevices: $devices\n');
+      write('brandify.yaml', 'locales: [en-US, de-DE]\ndevices: $devices\n$extra');
       write('integration_test/brandify_test.dart', '');
     }
 
@@ -158,7 +170,7 @@ void main() {
       expect(cs.map((c) => c.status).toSet(), {CheckStatus.ok}, reason: show(cs));
       expect(show(cs), allOf(contains('Flutter 3.38.1 (Dart 3.10.0)'), contains('[pixel] AVD Pixel_9'),
           contains('[iphone69] iPhone 17 Pro Max (iOS 26.4)'), contains('Xcode 27.0'), contains('fastlane 2.228.0'),
-          contains('2 locales (en-US, de-DE), 2 devices')));
+          contains('2 locales (en-US, de-DE), 2 devices'), contains('app: "Acme" (Android com.acme.app, iOS com.acme.app)')));
       expect(printChecks(cs, logger), 0);
       expect(out.lines.last, 'Ready to capture.');
     });
@@ -227,6 +239,34 @@ void main() {
       cs = await doctor(tools());
       expect(cs.singleWhere((c) => c.title.contains('R5CT')).status, CheckStatus.warn);
       expect(cs.any((c) => c.title.startsWith('iOS')), isFalse, reason: 'no iOS device configured');
+    });
+
+    test('app, logo and metadata: warnings that never block a capture', () async {
+      Future<String> appChecks(String extra) async {
+        project(extra: extra);
+        final cs = await doctor(tools());
+        expect(printChecks(cs, logger), 0, reason: show(cs));
+        return show(cs.where((c) => c.title.startsWith(RegExp('app|metadata'))).toList());
+      }
+
+      expect(await appChecks(''), '- app: not filled in Only `brandify rename` and `brandify icons` need it.');
+      expect(await appChecks('app: {name: Acme, logo_path: logo.png}\n'),
+          allOf(startsWith('! app: app.android_package, app.ios_bundle_id not filled in'),
+              contains('! app.logo_path is not usable'), contains('logo.png does not exist')));
+
+      File(p.join(root.path, 'logo.png')).writeAsBytesSync(img.encodePng(img.Image(width: 1024, height: 1024)));
+      expect(
+          await appChecks('app: {name: Acme, android_package: com.acme.app, ios_bundle_id: com.acme.app, '
+              'logo_path: logo.png}\n'),
+          contains('! app.logo_path logo.png, but no flutter_launcher_icons'));
+      write('pubspec.yaml', '$_pubspec  brandify_flutter: {path: x}\n  flutter_launcher_icons: any\n');
+      final cs = await doctor(tools());
+      expect(cs.singleWhere((c) => c.title.startsWith('app.logo_path')).status, CheckStatus.ok, reason: show(cs));
+
+      expect(await appChecks('${app}metadata: {en-US: {name: Acme}}\n'),
+          allOf(contains('! metadata: not ready'), contains('[en-US] App Store needs `description`')));
+      expect(await appChecks('${app}metadata: {en-US: {name: Acme, subtitle: S, description: D}}\n'),
+          contains('✓ metadata: en-US'));
     });
 
     test('version and tool output parsing', () {

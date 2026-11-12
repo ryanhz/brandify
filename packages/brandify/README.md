@@ -79,9 +79,16 @@ dart run brandify build    # all three steps below, in one unattended run
 dart run brandify capture  # raw screenshots, from the emulator / simulator
 dart run brandify frame    # store slides
 dart run brandify export   # into fastlane's folders
+
+dart run brandify rename   # app name, Android package, iOS bundle ID (dry run; --force applies)
+dart run brandify icons    # launcher icons from app.logo_path
+dart run brandify metadata # store listing text into fastlane's folders
 ```
 
-`init` picks an existing AVD if it finds one and never overwrites files (`--force` does).
+`init` picks an existing AVD if it finds one and never overwrites files (`--force` does). It also
+writes an `app:` and a `metadata:` block with every field empty and a comment on what goes there;
+fill them in, then run `rename`, `icons` and `metadata` yourself. `init` never runs them, and
+leaving the blocks empty doesn't stop a capture.
 
 ### `brandify build`
 
@@ -96,7 +103,10 @@ on exactly what this capture produced, so older captures of other devices or loc
 
 Checks Flutter (3.35.3 or newer), that your app depends on `brandify_flutter`, `brandify.yaml` and
 the capture test, the Android SDK (`adb`, `emulator`, each configured AVD), Xcode and each configured
-simulator, and fastlane (optional). The Android SDK is found like Flutter finds it: `$ANDROID_HOME`,
+simulator, fastlane (optional), and the `app:` and `metadata:` blocks: whether `app.name`,
+`app.android_package` and `app.ios_bundle_id` are filled in, whether `app.logo_path` exists and is a
+square PNG (and `flutter_launcher_icons` is a dependency), and whether each `metadata:` locale has
+what both stores need. Those last checks are warnings: they never stop a capture. The Android SDK is found like Flutter finds it: `$ANDROID_HOME`,
 `$ANDROID_SDK_ROOT`, Android Studio's default folder (`~/Library/Android/sdk` on macOS,
 `~/Android/Sdk` on Linux, `%LOCALAPPDATA%\Android\Sdk` on Windows), then `PATH`. It only reads: nothing is booted or changed. Every problem comes
 with what to do about it, and it exits 1 if a capture would fail.
@@ -225,11 +235,106 @@ Copies the framed screenshots to where fastlane uploads them from, next to `bran
   upload with the set stops the export and is listed, with nothing touched: an image in a Play
   slot folder, an image of a display class being written in an App Store folder, or a screenshot
   brandify wrote that was edited since. `--replace` deletes them. Images of other display classes
-  (e.g. a hand-made iPad set) and text metadata are left alone, and a file outside the set is
-  never overwritten.
+  (e.g. a hand-made iPad set) and text metadata are left alone (`brandify metadata` writes the
+  text), and a file outside the set is never overwritten.
 - **frameit:** `deliver` uploads only `*_framed.png` files from a folder that has any, so a frameit
   leftover there would silently hide brandify's screenshots. Export treats one as an image that
   doesn't belong (`--replace` deletes it) and rejects shot names that would end in `_framed`.
+
+## App identity and store listing
+
+These commands read the `app:` and `metadata:` blocks of `brandify.yaml`. Run each one yourself,
+when you need it. Each checks the fields it needs and names any that are missing before it changes
+anything.
+
+```yaml
+app:
+  name: Acme Tasks                 # shown under the launcher icon
+  android_package: com.acme.tasks  # Google Play applicationId
+  ios_bundle_id: com.acme.Tasks    # App Store bundle ID; may differ from the Android one
+  logo_path: assets/logo.png       # square PNG, 1024×1024, relative to brandify.yaml
+
+metadata:
+  en-US:                           # every locale here must be in `locales`
+    name: Acme Tasks               # App Store name, Play title (≤ 30)
+    subtitle: Plan your day        # App Store subtitle (≤ 30), Play short description (≤ 80)
+    description: |                 # both stores (≤ 4000)
+      Everything in one place.
+    keywords: [tasks, todo]        # App Store only (≤ 100 bytes, comma-joined)
+    release_notes: Faster sync.    # App Store "What's New" (≤ 4000), Play changelog (≤ 500)
+```
+
+### `brandify rename`
+
+**This edits your Flutter project's `android/` and `ios/` files. Commit before you run it**, so
+`git diff` shows what changed and `git checkout` undoes it.
+
+```bash
+dart run brandify rename           # dry run: old -> new for each value, and every file it would touch
+dart run brandify rename --force   # make the changes
+```
+
+It needs `app.name`, `app.android_package` and `app.ios_bundle_id`, and changes:
+
+| | |
+|---|---|
+| Android package | `applicationId` and `namespace` in `android/app/build.gradle` or `build.gradle.kts`; a leftover `package` attribute in the AndroidManifest.xml files |
+| Android sources | the package folder that holds `MainActivity` (Kotlin and Java), moved to the new package's folder with every file in it; `package` and `import` lines of the moved files updated |
+| Android name | `android:label` on `<application>`, or the `@string/` resource it points to |
+| iOS bundle ID | `PRODUCT_BUNDLE_IDENTIFIER` in `ios/Runner.xcodeproj`; IDs nested under the app's keep their suffix (`<id>.RunnerTests`) |
+| iOS name | `CFBundleDisplayName` in `ios/Runner/Info.plist` (the name under the icon) |
+
+Names are escaped for XML and Android resources (`Tom & Jerry's` is fine). What brandify can't
+change safely stops it before any file changes: product flavors with their own `applicationId`, bundle
+IDs set from build settings (`$(…)`), bundle IDs in the Xcode project that aren't the app's or under
+it, or a move that would overwrite a file. Translated app names (`res/values-*/strings.xml`) are left
+as they are. Run `flutter clean` afterwards. The Android package and the bundle ID can't change once
+the app is on the store, so pick them before the first upload.
+
+### `brandify icons`
+
+```bash
+flutter pub add dev:flutter_launcher_icons   # once: brandify icons runs it
+dart run brandify icons
+```
+
+Checks that `app.logo_path` exists and is a square PNG (smaller than 1024×1024 is a warning), writes
+a [flutter_launcher_icons](https://pub.dev/packages/flutter_launcher_icons) config to
+`build/brandify/flutter_launcher_icons.yaml`, and runs `dart run flutter_launcher_icons -f` on it. That
+replaces the Android `mipmap-*/ic_launcher.png` and iOS `AppIcon.appiconset` images, with the alpha
+channel removed for iOS (the App Store rejects it). Nothing else in your project is written; for
+adaptive icons or other platforms, use flutter_launcher_icons directly.
+
+Expect more than new images in `git diff` afterwards: flutter_launcher_icons also rewrites
+`ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json` and adds older icon sizes
+(`Icon-App-50x50`, `57x57`, `72x72`). That is how the tool always works, not something brandify
+adds. Commit those files along with the icons.
+
+### `brandify metadata`
+
+```bash
+dart run brandify metadata                  # both stores, every locale in metadata:
+dart run brandify metadata -p ios -l en-US  # only the App Store, only en-US
+```
+
+Writes the listing text where fastlane uploads it from:
+
+| Store | Folder | Files |
+|---|---|---|
+| App Store (`deliver`) | `fastlane/metadata/<locale>/` | `name.txt`, `subtitle.txt`, `description.txt`, `keywords.txt`, `release_notes.txt` |
+| Google Play (`supply`) | `fastlane/metadata/android/<locale>/` | `title.txt`, `short_description.txt`, `full_description.txt`, `changelogs/<versionCode>.txt` |
+
+- **Required:** the App Store needs `name` and `description`; Google Play needs `name`, `subtitle`
+  and `description`. A missing one, or text over a store's limit, is an error that lists every
+  locale and field at once, before anything is written. Optional fields that are empty are skipped.
+- **versionCode:** the Play changelog is named after the build number in `pubspec.yaml`
+  (`version: 1.2.0+42` → `changelogs/42.txt`), or `--version-code`.
+- **Locales** map to store codes as for export, including `export.locales` overrides and `none`.
+- **Only its own files**, as for export, in the same `fastlane/.brandify-export.json`: a file it
+  didn't write that holds other text (e.g. from `fastlane deliver init`) stops it, and
+  `--replace` overwrites it; one that already holds the same text is adopted. When you empty a
+  field, the file brandify wrote for it is deleted, so the store doesn't keep the old text. Other
+  files in these folders (`copyright.txt`, `review_information/`, images) are never touched.
 
 ## Running headless and in CI
 

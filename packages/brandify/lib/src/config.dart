@@ -11,7 +11,9 @@ class ConfigException extends BrandifyException {
   ConfigException(super.message);
 }
 
-/// `brandify.yaml`. `app` is accepted and reserved for later tasks.
+/// `brandify.yaml`. Parsing checks the shape and format of every block; the
+/// fields a command can't do without (`app.name` for `rename`, say) are
+/// checked by that command, so an unfilled `app:` block never stops a capture.
 class BrandifyConfig {
   BrandifyConfig({
     required this.root,
@@ -20,8 +22,12 @@ class BrandifyConfig {
     required this.capture,
     FrameConfig? frame,
     ExportConfig? export,
+    AppConfig? app,
+    Map<String, LocaleMetadata>? metadata,
   })  : frame = frame ?? FrameConfig(),
-        export = export ?? ExportConfig();
+        export = export ?? ExportConfig(),
+        app = app ?? AppConfig(),
+        metadata = metadata ?? const {};
 
   /// Directory holding `brandify.yaml`; relative paths resolve against it.
   final String root;
@@ -30,6 +36,14 @@ class BrandifyConfig {
   final CaptureConfig capture;
   final FrameConfig frame;
   final ExportConfig export;
+  final AppConfig app;
+
+  /// locale -> store listing text, in `brandify.yaml` order.
+  final Map<String, LocaleMetadata> metadata;
+
+  /// Where brandify keeps files it generates for other tools (e.g. the
+  /// flutter_launcher_icons config). Next to the capture output by default.
+  String get auxDir => p.normalize(p.join(root, 'build', 'brandify'));
 
   String get outputDir => p.normalize(p.join(root, capture.output));
 
@@ -37,7 +51,15 @@ class BrandifyConfig {
 
   String get fastlaneDir => p.normalize(p.join(root, export.output));
 
-  static const _topKeys = {'app', 'locales', 'devices', 'capture', 'frame', 'export'};
+  static const _topKeys = {'app', 'metadata', 'locales', 'devices', 'capture', 'frame', 'export'};
+
+  /// The store's listing code for [locale]: `export.locales` if it names one
+  /// (null: left out of that store), else [storeLocale]'s mapping.
+  String? storeLocaleFor(Store store, String locale) {
+    final override = export.locales[locale];
+    if (override != null && override.containsKey(store)) return override[store];
+    return storeLocale(store, locale);
+  }
 
   static BrandifyConfig load(String path) {
     final file = File(path);
@@ -98,13 +120,25 @@ class BrandifyConfig {
         ? ExportConfig()
         : ExportConfig._parse(_map(exportNode, 'export'), locales);
 
+    final appNode = top.nodes['app'];
+    final app = appNode == null || (appNode is YamlScalar && appNode.value == null)
+        ? AppConfig()
+        : AppConfig._parse(_map(appNode, 'app'));
+
+    final metadataNode = top.nodes['metadata'];
+    final metadata = metadataNode == null || (metadataNode is YamlScalar && metadataNode.value == null)
+        ? <String, LocaleMetadata>{}
+        : LocaleMetadata._parseAll(_map(metadataNode, 'metadata'), locales);
+
     return BrandifyConfig(
         root: root,
         locales: locales,
         devices: devices,
         capture: capture,
         frame: frame,
-        export: export);
+        export: export,
+        app: app,
+        metadata: metadata);
   }
 }
 
@@ -408,6 +442,165 @@ class ExportConfig {
   }
 }
 
+/// `app:`. Every field may be left empty (as `init` writes it); the
+/// commands that need one say so. A filled-in field must be well formed.
+///
+/// ```yaml
+/// app:
+///   name: Acme Tasks                 # shown under the launcher icon
+///   android_package: com.acme.tasks  # Play applicationId
+///   ios_bundle_id: com.acme.tasks    # App Store bundle ID
+///   logo_path: assets/logo.png       # square PNG, ideally 1024×1024
+/// ```
+class AppConfig {
+  AppConfig({this.name, this.androidPackage, this.iosBundleId, this.logoPath});
+
+  final String? name;
+  final String? androidPackage;
+  final String? iosBundleId;
+
+  /// Relative to the config's directory.
+  final String? logoPath;
+
+  /// `brandify.yaml` keys of the fields that are not filled in, of [keys].
+  List<String> missing(Iterable<String> keys) => [
+        for (final k in keys)
+          if (_byKey(k) == null) k
+      ];
+
+  String? _byKey(String key) => switch (key) {
+        'name' => name,
+        'android_package' => androidPackage,
+        'ios_bundle_id' => iosBundleId,
+        'logo_path' => logoPath,
+        _ => throw ArgumentError(key),
+      };
+
+  /// Throws, naming every one of [keys] that is not filled in.
+  void require(Iterable<String> keys, {required String command}) {
+    final m = missing(keys);
+    if (m.isEmpty) return;
+    throw ConfigException('`brandify $command` needs ${m.map((k) => '`app.$k`').join(', ')} in '
+        'brandify.yaml, which ${m.length == 1 ? 'is' : 'are'} not filled in.');
+  }
+
+  static AppConfig _parse(YamlMap m) {
+    _rejectUnknown(m, {'name', 'android_package', 'ios_bundle_id', 'logo_path'});
+    final android = _optString(m, 'android_package');
+    if (android != null) {
+      final segments = android.split('.');
+      if (!_androidPackage.hasMatch(android)) {
+        throw _err(m.nodes['android_package']!,
+            'android_package "$android" must have at least two dot-separated parts, each starting with '
+            'a letter and holding only letters, digits and "_" (e.g. com.acme.tasks).');
+      }
+      final reserved = segments.where(_reservedWords.contains).toList();
+      if (reserved.isNotEmpty) {
+        throw _err(m.nodes['android_package']!,
+            'android_package "$android" uses ${reserved.map((w) => '"$w"').join(', ')}, a Java/Kotlin '
+            'keyword, which can\'t be part of a package name.');
+      }
+    }
+    final ios = _optString(m, 'ios_bundle_id');
+    if (ios != null && !_iosBundleId.hasMatch(ios)) {
+      throw _err(m.nodes['ios_bundle_id']!,
+          'ios_bundle_id "$ios" must have at least two dot-separated parts of letters, digits and "-" '
+          '(e.g. com.acme.tasks).');
+    }
+    return AppConfig(
+      name: _optString(m, 'name'),
+      androidPackage: android,
+      iosBundleId: ios,
+      logoPath: _optString(m, 'logo_path'),
+    );
+  }
+}
+
+final _androidPackage = RegExp(r'^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$');
+final _iosBundleId = RegExp(r'^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$');
+const _reservedWords = {
+  'abstract', 'as', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', //
+  'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extends', 'false', 'final',
+  'finally', 'float', 'for', 'fun', 'goto', 'if', 'implements', 'import', 'in', 'instanceof', 'int',
+  'interface', 'is', 'long', 'native', 'new', 'null', 'object', 'package', 'private', 'protected',
+  'public', 'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this',
+  'throw', 'throws', 'transient', 'true', 'try', 'typealias', 'typeof', 'val', 'var', 'void',
+  'volatile', 'when', 'while',
+};
+
+/// One locale of `metadata:`. Every field may be left empty here;
+/// `brandify metadata` says which ones each store needs.
+///
+/// ```yaml
+/// metadata:
+///   en-US:
+///     name: Acme Tasks                     # App Store name, Play title
+///     subtitle: Plan your day              # App Store subtitle, Play short description
+///     description: |                       # both stores' full description
+///       Everything in one place.
+///     keywords: [tasks, todo, planner]     # App Store only; or "tasks,todo,planner"
+///     release_notes: Faster sync.          # App Store "What's New", Play changelog
+/// ```
+class LocaleMetadata {
+  LocaleMetadata({this.name, this.subtitle, this.description, this.keywords, this.releaseNotes});
+
+  final String? name;
+  final String? subtitle;
+  final String? description;
+
+  /// Comma-separated, as App Store Connect takes them.
+  final String? keywords;
+  final String? releaseNotes;
+
+  static const keys = ['name', 'subtitle', 'description', 'keywords', 'release_notes'];
+
+  String? operator [](String key) => switch (key) {
+        'name' => name,
+        'subtitle' => subtitle,
+        'description' => description,
+        'keywords' => keywords,
+        'release_notes' => releaseNotes,
+        _ => throw ArgumentError(key),
+      };
+
+  static Map<String, LocaleMetadata> _parseAll(YamlMap m, List<String> locales) {
+    final out = <String, LocaleMetadata>{};
+    for (final MapEntry(key: k, value: v) in m.nodes.entries) {
+      final locale = _scalarString(k as YamlNode, 'metadata locale');
+      if (!locales.contains(locale)) {
+        throw _err(k, 'Metadata for "$locale", which is not in `locales` (${locales.join(', ')}).');
+      }
+      if (v is YamlScalar && v.value == null) {
+        out[locale] = LocaleMetadata();
+        continue;
+      }
+      final lm = _map(v, 'metadata for $locale');
+      _rejectUnknown(lm, keys.toSet());
+      out[locale] = LocaleMetadata(
+        name: _optString(lm, 'name'),
+        subtitle: _optString(lm, 'subtitle'),
+        description: _optString(lm, 'description'),
+        keywords: _keywords(lm),
+        releaseNotes: _optString(lm, 'release_notes'),
+      );
+    }
+    return out;
+  }
+
+  static String? _keywords(YamlMap m) {
+    final n = m.nodes['keywords'];
+    if (n is! YamlList) return _optString(m, 'keywords');
+    final words = [
+      for (final w in n.nodes)
+        if (_scalarString(w, 'keywords entry').trim() case final t when t.isNotEmpty) t
+    ];
+    for (final (i, w) in words.indexed) {
+      if (w.contains(',')) throw _err(n.nodes[i], 'A keyword in a list can\'t contain ",".');
+    }
+    return words.isEmpty ? null : words.join(',');
+  }
+}
+
 int _color(YamlNode n) {
   final v = n is YamlScalar && n.value is String ? n.value as String : null;
   final match = v == null ? null : RegExp(r'^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$').firstMatch(v);
@@ -452,6 +645,20 @@ String? _string(YamlMap m, String key, {bool required = false}) {
     return null;
   }
   return _scalarString(n, '`$key`');
+}
+
+/// A string field that may be left empty: null for a missing key, `~`, or
+/// blank text. Block scalars (`|`) lose their trailing newline.
+String? _optString(YamlMap m, String key) {
+  final n = m.nodes[key];
+  if (n == null) return null;
+  if (n is YamlScalar) {
+    final v = n.value;
+    if (v == null) return null;
+    if (v is String) return v.trim().isEmpty ? null : v.trim();
+    if (v is num || v is bool) return '$v';
+  }
+  throw _err(n, 'Expected `$key` to be text.');
 }
 
 List<YamlNode> _list(YamlMap m, String key, {bool required = false}) {

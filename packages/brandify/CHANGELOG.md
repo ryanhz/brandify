@@ -1,3 +1,20 @@
+## Unreleased
+
+- `brandify init` also writes an `app:` block (`name`, `android_package`, `ios_bundle_id`,
+  `logo_path`) and a `metadata:` block per locale (`name`, `subtitle`, `description`, `keywords`,
+  `release_notes`), empty and commented, to fill in.
+- `brandify rename`: sets the display name, Android package and iOS bundle ID from `app:` in the
+  project's `android/` and `ios/` files: `applicationId` and `namespace` (Groovy or Kotlin DSL),
+  the Kotlin/Java sources moved to the new package, `android:label`, `PRODUCT_BUNDLE_IDENTIFIER`
+  (keeping `.RunnerTests`) and `CFBundleDisplayName`. Android and iOS IDs may differ. A dry run
+  listing every change unless `--force`.
+- `brandify icons`: launcher icons from `app.logo_path`, through flutter_launcher_icons with a
+  config brandify writes to `build/brandify/`.
+- `brandify metadata`: writes `metadata:` as fastlane `deliver` and `supply` text files, checks
+  required fields and store length limits, and only replaces files it wrote (recorded in
+  `fastlane/.brandify-export.json`, shared with export).
+- `brandify doctor` checks the `app:` fields, the logo and the metadata (as warnings).
+
 ## 0.1.0
 
 First release.

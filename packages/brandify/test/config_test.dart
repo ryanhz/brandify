@@ -1,4 +1,5 @@
 import 'package:brandify/src/config.dart';
+import 'package:brandify/src/store/slots.dart';
 import 'package:test/test.dart';
 
 BrandifyConfig parse(String yaml) => BrandifyConfig.parse(yaml, root: '/proj');
@@ -108,5 +109,79 @@ frame:
   test('error messages include the line', () {
     expect(() => parse('locales: [en-US]\ndevices:\n  - {id: p, platform: android, avd: a, colour: red}'),
         throwsConfig('line 3'));
+  });
+
+  group('app', () {
+    const base = 'locales: [en-US, de-DE]\ndevices: [{id: p, platform: android, avd: a}]\n';
+
+    test('filled in, left empty as init writes it, or absent', () {
+      var c = parse('${base}app: {name: Acme Tasks, android_package: com.acme.tasks, '
+          'ios_bundle_id: com.acme.myTasks, logo_path: assets/logo.png}');
+      expect([c.app.name, c.app.androidPackage, c.app.iosBundleId, c.app.logoPath],
+          ['Acme Tasks', 'com.acme.tasks', 'com.acme.myTasks', 'assets/logo.png']);
+      expect(c.app.missing(['name', 'logo_path']), isEmpty);
+
+      c = parse('${base}app:\n  name:\n  android_package: ""\n  ios_bundle_id:\n  logo_path:   # later\n');
+      expect(c.app.missing(['name', 'android_package', 'ios_bundle_id', 'logo_path']),
+          ['name', 'android_package', 'ios_bundle_id', 'logo_path']);
+      expect(parse(base).app.name, isNull);
+      expect(parse('${base}app:\n').app.name, isNull);
+    });
+
+    test('require names every missing field and the command', () {
+      final c = parse('${base}app: {name: Acme}');
+      expect(() => c.app.require(['name', 'android_package', 'ios_bundle_id'], command: 'rename'),
+          throwsConfig('`brandify rename` needs `app.android_package`, `app.ios_bundle_id`'));
+      c.app.require(['name'], command: 'rename');
+    });
+
+    test('rejects malformed IDs and unknown keys', () {
+      expect(() => parse('${base}app: {android_package: acme}'), throwsConfig('at least two'));
+      expect(() => parse('${base}app: {android_package: com.1acme.app}'), throwsConfig('starting with a letter'));
+      expect(() => parse('${base}app: {android_package: com.acme.new}'), throwsConfig('"new", a Java/Kotlin keyword'));
+      expect(() => parse('${base}app: {ios_bundle_id: com.acme_x.app}'), throwsConfig('ios_bundle_id'));
+      expect(() => parse('${base}app: {bundle: x}'), throwsConfig('Unknown key `bundle`'));
+      expect(() => parse('${base}app: {name: [a]}'), throwsConfig('to be text'));
+      parse('${base}app: {ios_bundle_id: com.acme-co.My-App}');
+    });
+  });
+
+  group('metadata', () {
+    const base = 'locales: [en-US, de-DE]\ndevices: [{id: p, platform: android, avd: a}]\n';
+
+    test('per locale; keywords as a list or text; block text trimmed', () {
+      final c = parse('''${base}metadata:
+  en-US:
+    name: Acme
+    description: |
+      Line one.
+      Line two.
+    keywords: [tasks, " todo ", planner]
+  de-DE:
+    name: Acme
+    keywords: "aufgaben,todo"
+    release_notes: 42
+''');
+      expect(c.metadata.keys, ['en-US', 'de-DE']);
+      expect(c.metadata['en-US']!.description, 'Line one.\nLine two.');
+      expect(c.metadata['en-US']!.keywords, 'tasks,todo,planner');
+      expect(c.metadata['en-US']!.subtitle, isNull);
+      expect(c.metadata['de-DE']!.keywords, 'aufgaben,todo');
+      expect(c.metadata['de-DE']!.releaseNotes, '42');
+    });
+
+    test('locales must be configured; keys are checked', () {
+      expect(() => parse('${base}metadata: {fr-FR: {name: x}}'), throwsConfig('not in `locales`'));
+      expect(() => parse('${base}metadata: {en-US: {title: x}}'), throwsConfig('Unknown key `title`'));
+      expect(() => parse('${base}metadata: {en-US: {keywords: ["a,b"]}}'), throwsConfig('can\'t contain ","'));
+      expect(parse('${base}metadata: {en-US: }').metadata['en-US']!.name, isNull);
+    });
+
+    test('storeLocaleFor applies export.locales', () {
+      final c = parse('${base}export: {locales: {de-DE: {play: none}}}');
+      expect(c.storeLocaleFor(Store.play, 'de-DE'), isNull);
+      expect(c.storeLocaleFor(Store.appStore, 'de-DE'), 'de-DE');
+      expect(c.storeLocaleFor(Store.appStore, 'en-US'), 'en-US');
+    });
   });
 }

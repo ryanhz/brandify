@@ -17,6 +17,10 @@ dart run brandify init && dart run brandify doctor
 dart run brandify build     # capture → frame → export
 ```
 
+Fill in `app:` and `metadata:` in `brandify.yaml` and the rest of the store presence follows, one
+command each: `brandify rename` (display name, Android package, iOS bundle ID), `brandify icons`
+(launcher icons from your logo) and `brandify metadata` (listing text for fastlane).
+
 | Package | |
 |---|---|
 | [`packages/brandify`](packages/brandify) | The CLI (pure Dart) |

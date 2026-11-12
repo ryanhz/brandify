@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
@@ -11,8 +9,8 @@ import '../frame/frame_job.dart';
 import '../logger.dart';
 import '../png.dart';
 import '../process.dart';
-import '../store/locales.dart';
 import '../store/slots.dart';
+import 'ownership.dart';
 
 /// One framed screenshot placed in the fastlane tree.
 class ExportedImage {
@@ -43,9 +41,9 @@ class ExportedImage {
 /// same from run to run.
 ///
 /// Everything is planned and checked before anything is touched. brandify
-/// records what it wrote (path and SHA-256) in [manifestName] at the root of
-/// the fastlane folder and only ever deletes or replaces files listed there
-/// and unchanged since. Any other image that fastlane would upload alongside
+/// records what it wrote (path and SHA-256) in the [OwnershipRecord] at the
+/// root of the fastlane folder and only ever deletes or replaces files listed
+/// there and unchanged since. Any other image that fastlane would upload alongside
 /// brandify's set (any image in a supply slot folder; an image of a display
 /// class being written, or a frameit `*_framed` image, in a deliver folder)
 /// stops the export, unless `replace` is set, in which case it is deleted.
@@ -58,23 +56,17 @@ class FastlaneExporter {
   final BrandifyConfig config;
   final Logger logger;
 
-  /// Ownership record, relative to [BrandifyConfig.fastlaneDir]. Dotfiles are
-  /// never matched by fastlane's globs.
-  static const manifestName = '.brandify-export.json';
-
-  String get _manifestPath => p.join(config.fastlaneDir, manifestName);
-
   List<ExportedImage> run({Set<String>? devices, Set<String>? locales, bool replace = false}) {
     final job = FrameJob.build(config, devices: devices, locales: locales, logger: logger);
     final plan = _plan(job.items);
     if (plan.isEmpty) {
       throw BrandifyException('Nothing to export: every captured locale is set to `none` in export.locales.');
     }
-    final owned = _loadManifest();
+    final owned = OwnershipRecord.load(config.fastlaneDir);
     final stale = _survey(plan, owned, replace: replace);
     for (final f in stale) {
       File(f).deleteSync();
-      owned.remove(_rel(f));
+      owned.forget(f);
     }
     for (final dir in {for (final e in plan) p.dirname(e.path)}) {
       Directory(dir).createSync(recursive: true);
@@ -82,9 +74,9 @@ class FastlaneExporter {
     final written = <ExportedImage>[];
     for (final e in plan) {
       written.add(_write(e));
-      owned[_rel(e.path)] = _sha(File(e.path).readAsBytesSync());
+      owned.record(e.path);
     }
-    _saveManifest(owned);
+    owned.save();
     _verify(written);
     _report(written);
     return written;
@@ -121,10 +113,7 @@ class FastlaneExporter {
     for (final i in items) {
       final store = i.slot.store;
       codes.putIfAbsent((store, i.locale), () {
-        final override = config.export.locales[i.locale];
-        final code = override != null && override.containsKey(store)
-            ? override[store]
-            : storeLocale(store, i.locale);
+        final code = config.storeLocaleFor(store, i.locale);
         if (code == null) {
           logger.info('[${i.locale}] export.locales: left out of ${store.label}');
           return null;
@@ -198,7 +187,7 @@ class FastlaneExporter {
   /// the new set. Throws, touching nothing, when one of them isn't
   /// brandify's (unless [replace]) or a target name is taken by a file
   /// outside the set.
-  List<String> _survey(List<ExportedImage> plan, Map<String, String> owned, {required bool replace}) {
+  List<String> _survey(List<ExportedImage> plan, OwnershipRecord owned, {required bool replace}) {
     final slotsByFolder = <String, Set<String>>{};
     for (final e in plan) {
       slotsByFolder.putIfAbsent(p.dirname(e.path), () => {}).add(e.item.slot.id);
@@ -217,7 +206,7 @@ class FastlaneExporter {
         ..sort((a, b) => a.path.compareTo(b.path));
       for (final f in files) {
         final bytes = f.readAsBytesSync();
-        final ours = owned[_rel(f.path)] == _sha(bytes);
+        final ours = owned.owns(f.path, bytes);
         final StoreSlot? cls;
         final String? why;
         if (!deliver) {
@@ -273,35 +262,6 @@ class FastlaneExporter {
     } catch (_) {
       return null;
     }
-  }
-
-  static String _sha(List<int> bytes) => sha256.convert(bytes).toString();
-
-  /// Manifest key: relative to the fastlane folder, always with `/`.
-  String _rel(String path) => p.split(p.relative(path, from: config.fastlaneDir)).join('/');
-
-  Map<String, String> _loadManifest() {
-    final f = File(_manifestPath);
-    if (!f.existsSync()) return {};
-    try {
-      final j = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
-      return (j['files'] as Map<String, dynamic>).cast<String, String>();
-    } catch (_) {
-      throw BrandifyException('${p.relative(_manifestPath)} is not a brandify export record. '
-          'Delete it; the next export then treats every existing screenshot as not brandify\'s.');
-    }
-  }
-
-  void _saveManifest(Map<String, String> owned) {
-    // Forget files that are gone (deleted by hand, or by a deliver download).
-    owned.removeWhere((rel, _) => !File(p.join(config.fastlaneDir, rel)).existsSync());
-    final sorted = {for (final k in owned.keys.toList()..sort()) k: owned[k]};
-    File(_manifestPath).writeAsStringSync('${const JsonEncoder.withIndent('  ').convert({
-          'brandify_export': 1,
-          'note': 'Screenshots written by `brandify export`. It only deletes or replaces files '
-              'listed here and unchanged since.',
-          'files': sorted,
-        })}\n');
   }
 
   ExportedImage _write(ExportedImage e) {

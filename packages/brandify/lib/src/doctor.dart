@@ -7,7 +7,11 @@ import 'package:yaml/yaml.dart';
 import 'config.dart';
 import 'device/android.dart';
 import 'device/ios.dart';
+import 'icons/icon_generator.dart';
+import 'logger.dart';
+import 'metadata/metadata_writer.dart';
 import 'process.dart';
+import 'store/slots.dart';
 
 enum CheckStatus {
   ok('✓'),
@@ -187,7 +191,48 @@ class Doctor {
         ? Check(CheckStatus.ok, 'Capture test ${c.capture.test}')
         : Check(CheckStatus.fail, 'Capture test ${c.capture.test} not found',
             hint: 'Create it (`dart run brandify init` writes one) or set capture.test.'));
+    checks.addAll(_app(c));
     return c;
+  }
+
+  /// `app:` and `metadata:`: only `rename`, `icons` and `metadata` need them,
+  /// so gaps are warnings; capture doesn't care.
+  List<Check> _app(BrandifyConfig c) {
+    final checks = <Check>[];
+    final app = c.app;
+    const ids = ['name', 'android_package', 'ios_bundle_id'];
+    final missing = app.missing(ids);
+    if (missing.length == ids.length && app.logoPath == null) {
+      checks.add(Check(CheckStatus.skip, 'app: not filled in',
+          hint: 'Only `brandify rename` and `brandify icons` need it.'));
+    } else if (missing.isNotEmpty) {
+      checks.add(Check(CheckStatus.warn, 'app: ${missing.map((k) => 'app.$k').join(', ')} not filled in',
+          hint: '`brandify rename` needs name, android_package and ios_bundle_id.'));
+    } else {
+      checks.add(Check(CheckStatus.ok,
+          'app: "${app.name}" (Android ${app.androidPackage}, iOS ${app.iosBundleId})'));
+    }
+    if (app.logoPath != null) {
+      final icons = IconGenerator(config: c, runner: runner, logger: Logger());
+      try {
+        final (path: _, :warning) = icons.checkLogo();
+        checks.add(!icons.hasDependency()
+            ? Check(CheckStatus.warn, 'app.logo_path ${app.logoPath}, but no flutter_launcher_icons',
+                hint: '`brandify icons` runs it: `flutter pub add dev:flutter_launcher_icons`.')
+            : warning != null
+                ? Check(CheckStatus.warn, 'app.logo_path ${app.logoPath}', hint: warning)
+                : Check(CheckStatus.ok, 'app.logo_path ${app.logoPath}'));
+      } on BrandifyException catch (e) {
+        checks.add(Check(CheckStatus.warn, 'app.logo_path is not usable', hint: e.message));
+      }
+    }
+    if (c.metadata.isNotEmpty) {
+      final problems = MetadataWriter(config: c, logger: Logger()).validate(stores: Store.values.toSet());
+      checks.add(problems.isEmpty
+          ? Check(CheckStatus.ok, 'metadata: ${c.metadata.keys.join(', ')}')
+          : Check(CheckStatus.warn, 'metadata: not ready for `brandify metadata`', hint: problems.join('\n')));
+    }
+    return checks;
   }
 
   // -- Android ---------------------------------------------------------------
