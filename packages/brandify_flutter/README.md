@@ -12,7 +12,8 @@ dart run brandify init
 ```
 
 See the [brandify README](https://pub.dev/packages/brandify) for the whole workflow (`init`,
-`doctor`, then `build`: capture, frame, export), the config and the requirements.
+`doctor`, then `build`: capture, frame, export; `rename`, `icons` and `metadata` for the app's
+identity and store listing), the config and the requirements.
 
 ## The capture test
 

@@ -1,8 +1,8 @@
 # brandify
 
-**Status: 0.1.0, the first release.** Capture, framing and export work on Android emulators and iOS
-simulators. Export writes the folders fastlane uploads from; uploading them with `supply` /
-`deliver` has not been tried yet.
+**Status: 0.2.0.** Capture, framing and export work on Android emulators and iOS
+simulators. `export` and `metadata` write the folders fastlane uploads from; uploading them with
+`supply` / `deliver` has not been tried yet.
 
 brandify turns your Flutter app into store screenshots taken from a **real simulator or emulator**,
 driven by an `integration_test` script and run unattended with one command:

@@ -1,19 +1,27 @@
-## Unreleased
+## 0.2.0
+
+From an unbranded app to a branded store presence: fill in `brandify.yaml`, then run one command
+for each part.
 
 - `brandify init` also writes an `app:` block (`name`, `android_package`, `ios_bundle_id`,
   `logo_path`) and a `metadata:` block per locale (`name`, `subtitle`, `description`, `keywords`,
-  `release_notes`), empty and commented, to fill in.
-- `brandify rename`: sets the display name, Android package and iOS bundle ID from `app:` in the
-  project's `android/` and `ios/` files: `applicationId` and `namespace` (Groovy or Kotlin DSL),
-  the Kotlin/Java sources moved to the new package, `android:label`, `PRODUCT_BUNDLE_IDENTIFIER`
-  (keeping `.RunnerTests`) and `CFBundleDisplayName`. Android and iOS IDs may differ. A dry run
-  listing every change unless `--force`.
-- `brandify icons`: launcher icons from `app.logo_path`, through flutter_launcher_icons with a
-  config brandify writes to `build/brandify/`.
-- `brandify metadata`: writes `metadata:` as fastlane `deliver` and `supply` text files, checks
-  required fields and store length limits, and only replaces files it wrote (recorded in
-  `fastlane/.brandify-export.json`, shared with export).
-- `brandify doctor` checks the `app:` fields, the logo and the metadata (as warnings).
+  `release_notes`), empty and commented. It still doesn't prompt; empty fields never stop a capture.
+- New `brandify rename`: sets the display name, Android package and iOS bundle ID from `app:`.
+  brandify edits the files itself, with no external tool: `applicationId` and `namespace` (Groovy
+  or Kotlin DSL), the Kotlin/Java sources moved to the new package, `android:label`,
+  `PRODUCT_BUNDLE_IDENTIFIER` (keeping `<id>.RunnerTests`) and `CFBundleDisplayName`. Android and
+  iOS IDs may differ. Without `--force` it is a dry run that lists every change; it refuses what
+  it can't change safely (flavors, IDs from build settings) before touching a file.
+- New `brandify icons`: Android and iOS launcher icons from `app.logo_path`, made by
+  `flutter_launcher_icons` (a dev dependency of your app) from a config brandify writes to
+  `build/brandify/`.
+- New `brandify metadata`: writes `metadata:` as the text files fastlane `deliver` (App Store) and
+  `supply` (Google Play) upload, with the Play changelog named after the versionCode. It checks
+  required fields and store length limits for every locale before writing, and replaces or deletes
+  only files it wrote, recorded in `fastlane/.brandify-export.json` (shared with export).
+- `brandify.yaml` is checked when it loads: `app:` IDs must be well formed, and `metadata:`
+  locales must be in `locales`. Each command names any required field that is missing.
+- `brandify doctor` also checks `app:`, the logo and `metadata:`, as warnings.
 
 ## 0.1.0
 

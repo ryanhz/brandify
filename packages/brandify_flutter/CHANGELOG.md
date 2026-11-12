@@ -1,3 +1,7 @@
+## 0.2.0
+
+No API changes. Released alongside brandify 0.2.0; use both packages at the same version.
+
 ## 0.1.0
 
 First release.
