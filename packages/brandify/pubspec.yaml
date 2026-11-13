@@ -1,6 +1,6 @@
 name: brandify
 description: Turn an unbranded Flutter app into a branded store presence. Real simulator/emulator screenshots, app rename, launcher icons and fastlane store metadata.
-version: 0.3.1
+version: 0.3.2
 repository: https://github.com/ryanhz/brandify
 issue_tracker: https://github.com/ryanhz/brandify/issues
 topics: [screenshots, app-store, google-play, fastlane, integration-test]

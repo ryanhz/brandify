@@ -1,3 +1,11 @@
+## 0.3.2
+
+- **Google Play icon:** `brandify export` writes the listing's 512×512 icon to
+  `metadata/android/<locale>/images/icon.png` for each Play locale, scaled from `app.logo_path`
+  (transparency kept), when an Android device is part of the run. Same rules as the feature
+  graphic: only brandify's own file is replaced, and it's checked against Play's size and 1 MB
+  limit. Works with brandify_flutter 0.3.0.
+
 ## 0.3.1
 
 - `doctor` finds fastlane installed with Bundler: when a `Gemfile` next to `brandify.yaml` lists
