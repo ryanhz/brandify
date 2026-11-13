@@ -1,6 +1,6 @@
 # brandify
 
-**Status: 0.3.0.** Capture, framing and export work on Android emulators and iOS
+**Status: 0.3.1.** Capture, framing and export work on Android emulators and iOS
 simulators. `export` and `metadata` write the folders fastlane uploads from; uploading them with
 `supply` / `deliver` has not been tried yet.
 

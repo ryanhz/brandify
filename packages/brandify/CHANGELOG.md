@@ -1,3 +1,10 @@
+## 0.3.1
+
+- `doctor` finds fastlane installed with Bundler: when a `Gemfile` next to `brandify.yaml` lists
+  fastlane, it checks `bundle exec fastlane --version` there (often from `vendor/bundle`, not on
+  PATH) and warns to run `bundle install` if it isn't installed. Before, it reported "fastlane not
+  found". Works with brandify_flutter 0.3.0.
+
 ## 0.3.0
 
 More of the store listing from `brandify.yaml`, with `init` comments and `doctor` checks that say
