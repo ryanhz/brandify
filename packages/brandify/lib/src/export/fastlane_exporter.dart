@@ -60,12 +60,15 @@ class FastlaneExporter {
     final job = FrameJob.build(config, devices: devices, locales: locales, logger: logger);
     final plan = _plan(job.items);
     final graphics = _planFeatureGraphics(job.featureGraphics);
-    if (plan.isEmpty && graphics.isEmpty) {
+    final icons = _planIcons(devices: devices, locales: locales);
+    if (plan.isEmpty && graphics.isEmpty && icons.isEmpty) {
       throw BrandifyException('Nothing to export: every captured locale is set to `none` in export.locales.');
     }
     final owned = OwnershipRecord.load(config.fastlaneDir);
     final stale = _survey(plan, owned, replace: replace);
-    stale.addAll(_surveyFeatureGraphics(graphics, owned, replace: replace));
+    stale.addAll(_surveySingles([for (final g in graphics) g.path], _featureGraphicName, 'feature graphics', owned,
+        replace: replace));
+    stale.addAll(_surveySingles(icons, _iconName, 'Play icons', owned, replace: replace));
     for (final f in stale) {
       File(f).deleteSync();
       owned.forget(f);
@@ -82,12 +85,25 @@ class FastlaneExporter {
       _writeFeatureGraphic(g);
       owned.record(g.path);
     }
+    if (icons.isNotEmpty) {
+      final icon = _playIcon();
+      for (final path in icons) {
+        File(path)
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(icon);
+        owned.record(path);
+      }
+    }
     owned.save();
     _verify(written);
     _verifyFeatureGraphics(graphics);
+    _verifyIcons(icons);
     _report(written);
     for (final g in graphics) {
       logger.info('[${g.item.locale}] Google Play feature graphic -> ${p.relative(g.path)}');
+    }
+    for (final path in icons) {
+      logger.info('Google Play icon ($playIconSize×$playIconSize, from app.logo_path) -> ${p.relative(path)}');
     }
     return written;
   }
@@ -116,19 +132,22 @@ class FastlaneExporter {
 
   static final _featureGraphicName = RegExp(r'^featureGraphic\.(png|jpe?g)$', caseSensitive: false);
 
-  /// supply uploads one `featureGraphic.*`: any other one in the folder (or
-  /// one brandify didn't write at the target) is foreign, as for screenshots.
-  List<String> _surveyFeatureGraphics(List<({FeatureGraphicItem item, String path})> graphics,
-      OwnershipRecord owned, {required bool replace}) {
+  static final _iconName = RegExp(r'^icon\.(png|jpe?g)$', caseSensitive: false);
+
+  /// supply uploads one `featureGraphic.*` and one `icon.*` per language: any
+  /// other one in the folder (or one brandify didn't write at the target) is
+  /// foreign, as for screenshots.
+  List<String> _surveySingles(List<String> targets, RegExp name, String what, OwnershipRecord owned,
+      {required bool replace}) {
     final stale = <String>[];
     final foreign = <String>[];
-    for (final g in graphics) {
-      final dir = Directory(p.dirname(g.path));
+    for (final target in targets) {
+      final dir = Directory(p.dirname(target));
       if (!dir.existsSync()) continue;
       for (final f in dir.listSync().whereType<File>()) {
-        if (!_featureGraphicName.hasMatch(p.basename(f.path))) continue;
+        if (!name.hasMatch(p.basename(f.path))) continue;
         if (owned.owns(f.path, f.readAsBytesSync())) {
-          if (f.path != g.path) stale.add(f.path);
+          if (f.path != target) stale.add(f.path);
         } else if (replace) {
           stale.add(f.path);
         } else {
@@ -137,7 +156,7 @@ class FastlaneExporter {
       }
     }
     if (foreign.isNotEmpty) {
-      throw BrandifyException('These feature graphics would be replaced, but brandify did not write them '
+      throw BrandifyException('These $what would be replaced, but brandify did not write them '
           '(or they changed since):\n${foreign.map((l) => '  - $l').join('\n')}\n'
           'Move them out, or run `brandify export --replace` to delete them.');
     }
@@ -172,6 +191,67 @@ class FastlaneExporter {
     }
     if (problems.isNotEmpty) {
       throw BrandifyException('Exported feature graphics break store rules:\n'
+          '${problems.map((l) => '  - $l').join('\n')}');
+    }
+  }
+
+  // -- the Play icon ---------------------------------------------------------
+
+  /// Where the Play hi-res icon goes, when there is a logo and the export
+  /// includes an Android device (as for the feature graphic):
+  /// `metadata/android/<play-locale>/images/icon.png`.
+  List<String> _planIcons({Set<String>? devices, Set<String>? locales}) {
+    if (config.app.logoPath == null) return const [];
+    final android = config.devices.where((d) => d.platform == DevicePlatform.android);
+    if (!android.any((d) => devices == null || devices.isEmpty || devices.contains(d.id))) return const [];
+    return [
+      for (final locale in config.locales)
+        if (locales == null || locales.isEmpty || locales.contains(locale))
+          if (config.storeLocaleFor(Store.play, locale) case final code?)
+            p.join(config.fastlaneDir, 'metadata', 'android', code, 'images', 'icon.png'),
+    ];
+  }
+
+  /// `app.logo_path` scaled to 512×512. The same bytes for every run, so the
+  /// ownership record recognises it.
+  Uint8List _playIcon() {
+    final path = p.normalize(p.join(config.root, config.app.logoPath!));
+    final file = File(path);
+    final logo = file.existsSync() ? img.decodeImage(file.readAsBytesSync()) : null;
+    if (logo == null) {
+      throw BrandifyException('app.logo_path: ${p.relative(path)} is missing or not an image (needed for the '
+          'Google Play icon).');
+    }
+    if (logo.width != logo.height) {
+      throw BrandifyException('app.logo_path: ${p.relative(path)} is ${logo.width}×${logo.height}; the Google '
+          'Play icon needs a square image (1024×1024 is best).');
+    }
+    if (logo.width < playIconSize) {
+      logger.warn('app.logo_path is ${logo.width}×${logo.height}, smaller than the $playIconSize×$playIconSize '
+          'Google Play icon: it is scaled up and may look soft.');
+    }
+    final icon = logo.width == playIconSize
+        ? logo
+        : img.copyResize(logo,
+            width: playIconSize,
+            height: playIconSize,
+            interpolation: logo.width > playIconSize ? img.Interpolation.average : img.Interpolation.cubic);
+    return img.encodePng(icon);
+  }
+
+  void _verifyIcons(List<String> icons) {
+    final problems = <String>[];
+    for (final path in icons) {
+      final bytes = File(path).readAsBytesSync();
+      final size = pngSize(bytes);
+      if (size == null || size.width != playIconSize || size.height != playIconSize) {
+        problems.add('${p.relative(path)} is not a $playIconSize×$playIconSize PNG');
+      } else if (bytes.length > playIconMaxBytes) {
+        problems.add('${p.relative(path)} is ${(bytes.length / 1024).round()} KB; Google Play allows 1 MB');
+      }
+    }
+    if (problems.isNotEmpty) {
+      throw BrandifyException('The exported Play icon breaks store rules:\n'
           '${problems.map((l) => '  - $l').join('\n')}');
     }
   }

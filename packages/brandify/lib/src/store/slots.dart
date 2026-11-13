@@ -53,6 +53,11 @@ const playMaxCount = 8;
 const playFeatureGraphicWidth = 1024;
 const playFeatureGraphicHeight = 500;
 
+/// Google Play's hi-res app icon: 512×512, 32-bit PNG (alpha allowed), at most
+/// 1 MB, one per listing language, at `images/icon.png` in supply.
+const playIconSize = 512;
+const playIconMaxBytes = 1024 * 1024;
+
 /// The Android classes, by the device's smallest width in dp.
 enum PlayClass {
   phone('play_phone', 'Google Play phone', 'phoneScreenshots'),

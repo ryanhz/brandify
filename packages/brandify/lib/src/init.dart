@@ -24,7 +24,8 @@ app:
   name:              # shown under the launcher icon, e.g. Acme Tasks
   android_package:   # Google Play applicationId, e.g. com.acme.tasks (fixed after the first upload)
   ios_bundle_id:     # App Store bundle ID, e.g. com.acme.tasks (fixed after the first upload)
-  logo_path:         # square PNG, 1024×1024, relative to this file, e.g. assets/logo.png
+  logo_path:         # square PNG, 1024×1024, relative to this file, e.g. assets/logo.png;
+                     # also the launcher icons and Google Play's 512×512 listing icon
 
 # BCP 47 tags; each becomes its own capture (the app runs with that locale).
 locales: [en-US]

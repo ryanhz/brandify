@@ -236,6 +236,14 @@ the middle when the listing has a video; long text shrinks to fit. It is only ma
 device is part of the run, and not for locales set to `play: none`. It needs no capture, so
 `brandify frame` works before your first one.
 
+### Play icon
+
+Google Play's listing has its own 512×512 icon, separate from the one in the app. When
+`app.logo_path` is set and an Android device is part of the run, `brandify export` scales the logo
+to 512×512 (transparency kept) into `images/icon.png` for each Play locale. Play rounds the corners
+and adds the shadow itself, so a logo that fills its square works best. The App Store takes its
+icon from the build, so there is nothing to export for it.
+
 ### Export to fastlane
 
 ```bash
@@ -248,6 +256,7 @@ Copies the framed screenshots to where fastlane uploads them from, next to `bran
 |---|---|---|
 | Google Play | `fastlane/metadata/android/<locale>/images/{phone,sevenInch,tenInch}Screenshots/` | `supply` |
 | Google Play feature graphic | `fastlane/metadata/android/<locale>/images/featureGraphic.png` | `supply` |
+| Google Play icon | `fastlane/metadata/android/<locale>/images/icon.png` | `supply` |
 | App Store | `fastlane/screenshots/<locale>/` (display class told apart by pixel size) | `deliver` |
 
 - **Names:** `{n}_{name}.png` in the order your test shot them (`1_home.png`, `2_add_task.png`;

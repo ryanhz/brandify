@@ -257,6 +257,37 @@ void main() {
       png('build/brandify/framed/_feature_graphic/en-US.png', 1000, 500);
       expect(() => FastlaneExporter(config: c, logger: logger).run(), fails('Run `brandify frame` again'));
     });
+
+    test('export: the Play icon, app.logo_path at 512×512 per Play locale; foreign ones stop it', () {
+      File(p.join(root.path, 'logo.png'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(img.encodePng(img.Image(width: 1024, height: 1024, numChannels: 4)
+          ..clear(img.ColorRgba8(200, 40, 40, 128))));
+      final c = config('$_metadata  de-DE: {name: Acme DE}\napp: {logo_path: logo.png}\nfeature_graphic: {}\n'
+          'export: {locales: {de-DE: {play: none}}}\n',
+          locales: '[en-US, de-DE]', devices: devices);
+      png('build/brandify/framed/_feature_graphic/en-US.png', 1024, 500);
+      const dest = 'fastlane/metadata/android/en-US/images/icon.png';
+
+      write('fastlane/metadata/android/en-US/images/icon.jpg', 'theirs');
+      expect(() => FastlaneExporter(config: c, logger: logger).run(), fails('icon.jpg'));
+      expect(exists(dest), isFalse);
+
+      FastlaneExporter(config: c, logger: logger).run(replace: true);
+      expect(exists('fastlane/metadata/android/en-US/images/icon.jpg'), isFalse);
+      expect(exists('fastlane/metadata/android/de-DE/images/icon.png'), isFalse, reason: 'de-DE is not on Play');
+      final icon = img.decodePng(File(p.join(root.path, dest)).readAsBytesSync())!;
+      expect((icon.width, icon.height), (512, 512));
+      final px = icon.getPixel(256, 256);
+      expect((px.r, px.g, px.b, px.a), (200, 40, 40, 128), reason: 'scaled, alpha kept');
+      expect(out.lines, contains(contains('Google Play icon (512×512, from app.logo_path) ->')));
+
+      // The same bytes every run: brandify's own file is replaced without --replace.
+      FastlaneExporter(config: c, logger: logger).run();
+
+      png('logo.png', 1024, 800);
+      expect(() => FastlaneExporter(config: c, logger: logger).run(), fails('needs a square image'));
+    });
   });
 
   group('doctor', () {
