@@ -1,6 +1,6 @@
 name: brandify_flutter
 description: Test helper and framing widgets for brandify. Add as a dev_dependency of your Flutter app.
-version: 0.2.2
+version: 0.3.0
 repository: https://github.com/ryanhz/brandify
 issue_tracker: https://github.com/ryanhz/brandify/issues
 topics: [screenshots, app-store, google-play, fastlane, integration-test]

@@ -1,3 +1,9 @@
+## 0.3.0
+
+- Renders the Google Play feature graphic for `brandify frame` (frame job v2): 1024×500, the logo on
+  the left and the name and subtitle on the right, or the text alone, centred; text shrinks to fit
+  inside the edges. Needs brandify 0.3.0.
+
 ## 0.2.2
 
 - No changes; released alongside brandify 0.2.2 so both packages keep the same version.

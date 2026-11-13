@@ -1,3 +1,28 @@
+## 0.3.0
+
+More of the store listing from `brandify.yaml`, with `init` comments and `doctor` checks that say
+what each store still needs.
+
+- **Google Play feature graphic:** a `feature_graphic:` block (present, even empty, turns it on)
+  makes `brandify frame` render the 1024×500 banner per locale (logo, name and subtitle on the frame
+  background; every key defaults from the rest of `brandify.yaml`), and `brandify export` places it
+  at `images/featureGraphic.png`, opaque, with the same only-its-own-files rules as screenshots.
+  `frame` no longer needs a capture when there is a feature graphic to make. The frame job is now
+  v2: use brandify_flutter 0.3.0.
+- **`app_store:`** (`brandify metadata`): primary and secondary category (any spelling, checked
+  against Apple's list), copyright, support, privacy and marketing URLs (written into every App
+  Store locale), and App Review information (contact, demo account, notes), as the files
+  `deliver` reads.
+- **`metadata.<locale>.promotional_text`** (App Store, ≤ 170).
+- **`${NAME}`** in `app_store:` values, read from the environment or from `.env` next to
+  `brandify.yaml`, for secrets such as a demo password. An unset one stops `metadata` before
+  anything is written.
+- **`brandify doctor`** reports which `app_store:` fields App Store Connect needs before a
+  submission are empty, unset `${NAME}`s, whether the feature graphic can be made, and whether
+  `.env` and files written from `${NAME}` are git-ignored.
+- **`brandify init`** writes an `app_store:` block and a commented-out `feature_graphic:` block, with
+  what goes where.
+
 ## 0.2.2
 
 - `capture` and `frame` run `flutter pub get` when Flutter's plugin list
