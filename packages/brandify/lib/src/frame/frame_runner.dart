@@ -8,6 +8,7 @@ import '../logger.dart';
 import '../png.dart';
 import '../process.dart';
 import '../pub.dart';
+import '../store/slots.dart';
 import 'frame_job.dart';
 
 /// The widget test `brandify frame` generates in the app's project. It
@@ -43,7 +44,7 @@ class FrameRunner {
   Future<List<FrameItem>> run(FrameJob job) async {
     // The framed folders being written belong to brandify: start clean so
     // stale images never leak into an upload.
-    for (final dir in {for (final i in job.items) p.dirname(i.out)}) {
+    for (final dir in {for (final i in job.items) p.dirname(i.out), for (final f in job.featureGraphics) p.dirname(f.out)}) {
       final d = Directory(dir);
       if (d.existsSync() && p.isWithin(config.framedDir, dir)) d.deleteSync(recursive: true);
       d.createSync(recursive: true);
@@ -60,7 +61,8 @@ class FrameRunner {
       '--dart-define=BRANDIFY_FRAME_JOB=$jobFile',
     ];
     await ensurePackages(root: config.root, runner: runner, logger: logger, flutter: flutter);
-    logger.info('framing ${job.items.length} screenshots');
+    logger.info('framing ${job.items.length} screenshots'
+        '${job.featureGraphics.isEmpty ? '' : ' and ${job.featureGraphics.length} feature graphic${job.featureGraphics.length == 1 ? '' : 's'}'}');
     logger.detail('$flutter ${args.join(' ')}');
     final r = await runner.run(flutter, args, timeout: timeout, workingDirectory: config.root);
     final output = '${r.stdout}\n${r.stderr}';
@@ -88,6 +90,16 @@ class FrameRunner {
             '${size == null ? 'not a PNG' : '${size.width}×${size.height}'}, but '
             '${i.slot} needs ${i.slot.width}×${i.slot.height}.');
       }
+    }
+    for (final f in job.featureGraphics) {
+      final file = File(f.out);
+      final size = file.existsSync() ? pngSize(file.readAsBytesSync()) : null;
+      if (size == null || size.width != playFeatureGraphicWidth || size.height != playFeatureGraphicHeight) {
+        throw BrandifyException('[${f.locale}] the feature graphic ${p.relative(f.out)} '
+            '${size == null ? 'was not written' : 'is ${size.width}×${size.height}'}; Google Play needs '
+            '$playFeatureGraphicWidth×$playFeatureGraphicHeight.');
+      }
+      logger.info('[${f.locale}] Google Play feature graphic -> ${p.relative(f.out)}');
     }
     final groups = <String, int>{};
     for (final i in job.items) {

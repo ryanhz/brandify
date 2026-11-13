@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'ads_adapter.dart';
+import 'feature_graphic.dart';
 import 'job.dart';
 
 const _jobPath = String.fromEnvironment('BRANDIFY_FRAME_JOB');
@@ -25,6 +26,8 @@ void brandifyFrameMain() {
     await initializeFraming();
     final font = job.style.font;
     if (font != null) await loadCaptionFont(font);
+    final fgFont = job.featureGraphicStyle.font;
+    if (job.featureGraphics.isNotEmpty && fgFont != null) await loadFeatureGraphicFont(fgFont);
     captionPlans = planCaptions(job.items, job.style);
   });
   for (final item in job.items) {
@@ -35,6 +38,17 @@ void brandifyFrameMain() {
             captions: captionPlans[item.device]);
       } finally {
         image.dispose();
+      }
+    });
+  }
+  for (final item in job.featureGraphics) {
+    testWidgets('feature graphic ${item.locale}', (tester) async {
+      final logoPath = job.featureGraphicStyle.logo;
+      final logo = logoPath == null ? null : await decodeCapture(tester, logoPath);
+      try {
+        await renderFeatureGraphic(tester, item, job.featureGraphicStyle, logo);
+      } finally {
+        logo?.dispose();
       }
     });
   }

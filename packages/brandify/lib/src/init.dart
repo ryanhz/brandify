@@ -55,7 +55,41 @@ metadata:
     subtitle:        # App Store subtitle (optional, ≤ 30); Play short description (required, ≤ 80)
     description:     # full description, both stores; required, ≤ 4000. Use `|` for several lines
     keywords:        # App Store only, optional: [tasks, todo] or "tasks,todo", ≤ 100 bytes in all
+    promotional_text:  # App Store only, optional, ≤ 170; can change without a new release
     release_notes:   # optional: App Store "What's New" (≤ 4000), Play changelog (≤ 500)
+
+# App Store fields that aren't per-locale text; `brandify metadata` writes them too.
+# App Store Connect needs primary_category, copyright, support_url, privacy_url and
+# the review contact before you can submit; `brandify doctor` lists what's missing.
+# Any value may be \${NAME}, read from the environment or from .env next to this file
+# (NAME=value lines). Use that for secrets such as a demo password, and git-ignore
+# .env and fastlane/metadata/review_information/demo_password.txt (doctor checks).
+app_store:
+  primary_category:    # e.g. productivity, utilities, education, "Photo & Video"
+  secondary_category:  # optional
+  copyright:           # e.g. 2026 Acme Inc.
+  support_url:         # https://..., shown on the listing (every locale)
+  privacy_url:         # https://..., your privacy policy (every locale)
+  marketing_url:       # optional
+  review:              # App Review information: only Apple's reviewers see it
+    first_name:
+    last_name:
+    email:
+    phone:             # with country code, e.g. +1 555 0100
+    demo_user:         # only if the app needs a sign-in
+    demo_password:     # e.g. \${REVIEW_DEMO_PASSWORD}, set in .env
+    notes:             # anything a reviewer needs to know, e.g. how to reach a paid feature
+
+# Google Play needs a 1024×500 feature graphic to publish. Uncomment to have
+# `brandify frame` make one (logo left, name and subtitle right) and `brandify
+# export` place it. Every key is optional; these are the defaults.
+# feature_graphic:
+#   background: ['#0B1F3A', '#2E5BFF']   # default: frame.background
+#   text_color: '#FFFFFF'                # default: white or black, whichever reads better
+#   logo: assets/logo.png                # default: app.logo_path; `none` for text only
+#   font: fonts/Brand-Bold.ttf           # default: frame.font
+#   text:                                # default: metadata.<locale> name and subtitle
+#     en-US: {headline: Acme Tasks, subheadline: Plan your day}
 
 # export:                            # `dart run brandify export` -> fastlane folders
 #   locales:                         # only where a locale has no automatic store code
@@ -144,7 +178,7 @@ class Initializer {
     logger.info('  ${++n}. Add a shot(\'...\') per screenshot, and a caption per shot in brandify.yaml.');
     logger.info('  ${++n}. dart run brandify doctor');
     logger.info('  ${++n}. dart run brandify build    (capture, frame and export)');
-    logger.info('  ${++n}. Fill in app: and metadata: in brandify.yaml, then, when you want them:\n'
+    logger.info('  ${++n}. Fill in app:, metadata: and app_store: in brandify.yaml, then, when you want them:\n'
         '     dart run brandify rename     (name and IDs; commit first, it edits android/ and ios/)\n'
         '     dart run brandify icons      (launcher icons; needs dev:flutter_launcher_icons)\n'
         '     dart run brandify metadata   (store listing text -> fastlane)');

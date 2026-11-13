@@ -48,6 +48,11 @@ const playMinSide = 320;
 const playMaxSide = 3840;
 const playMaxCount = 8;
 
+/// Google Play's feature graphic: exactly this size, JPEG or 24-bit PNG (no
+/// alpha), one per listing language, at `images/featureGraphic.png` in supply.
+const playFeatureGraphicWidth = 1024;
+const playFeatureGraphicHeight = 500;
+
 /// The Android classes, by the device's smallest width in dp.
 enum PlayClass {
   phone('play_phone', 'Google Play phone', 'phoneScreenshots'),

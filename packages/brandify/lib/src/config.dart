@@ -24,6 +24,8 @@ class BrandifyConfig {
     ExportConfig? export,
     AppConfig? app,
     Map<String, LocaleMetadata>? metadata,
+    this.appStore,
+    this.featureGraphic,
   })  : frame = frame ?? FrameConfig(),
         export = export ?? ExportConfig(),
         app = app ?? AppConfig(),
@@ -41,6 +43,13 @@ class BrandifyConfig {
   /// locale -> store listing text, in `brandify.yaml` order.
   final Map<String, LocaleMetadata> metadata;
 
+  /// `app_store:`, or null when brandify.yaml has none.
+  final AppStoreConfig? appStore;
+
+  /// `feature_graphic:`, or null when brandify.yaml has none (then no
+  /// feature graphic is made).
+  final FeatureGraphicConfig? featureGraphic;
+
   /// Where brandify keeps files it generates for other tools (e.g. the
   /// flutter_launcher_icons config). Next to the capture output by default.
   String get auxDir => p.normalize(p.join(root, 'build', 'brandify'));
@@ -51,7 +60,9 @@ class BrandifyConfig {
 
   String get fastlaneDir => p.normalize(p.join(root, export.output));
 
-  static const _topKeys = {'app', 'metadata', 'locales', 'devices', 'capture', 'frame', 'export'};
+  static const _topKeys = {
+    'app', 'metadata', 'app_store', 'feature_graphic', 'locales', 'devices', 'capture', 'frame', 'export', //
+  };
 
   /// The store's listing code for [locale]: `export.locales` if it names one
   /// (null: left out of that store), else [storeLocale]'s mapping.
@@ -59,6 +70,21 @@ class BrandifyConfig {
     final override = export.locales[locale];
     if (override != null && override.containsKey(store)) return override[store];
     return storeLocale(store, locale);
+  }
+
+  /// The feature graphic's text for [locale]: `feature_graphic.text`, else
+  /// the locale's `metadata:` name and subtitle; null if neither is filled.
+  Caption? featureGraphicText(String locale) {
+    final own = featureGraphic?.text[locale];
+    if (own != null) return own;
+    final m = metadata[locale];
+    return m?.name == null ? null : Caption(m!.name!, m.subtitle);
+  }
+
+  /// The feature graphic's logo, absolute, or null for none.
+  String? get featureGraphicLogo {
+    final logo = featureGraphic?.logo ?? app.logoPath;
+    return logo == null || logo == 'none' ? null : p.normalize(p.join(root, logo));
   }
 
   static BrandifyConfig load(String path) {
@@ -130,6 +156,18 @@ class BrandifyConfig {
         ? <String, LocaleMetadata>{}
         : LocaleMetadata._parseAll(_map(metadataNode, 'metadata'), locales);
 
+    final appStoreNode = top.nodes['app_store'];
+    final appStore = appStoreNode == null || (appStoreNode is YamlScalar && appStoreNode.value == null)
+        ? null
+        : AppStoreConfig._parse(_map(appStoreNode, 'app_store'));
+
+    final fgNode = top.nodes['feature_graphic'];
+    final featureGraphic = fgNode == null
+        ? null
+        : fgNode is YamlScalar && fgNode.value == null
+            ? FeatureGraphicConfig()
+            : FeatureGraphicConfig._parse(_map(fgNode, 'feature_graphic'), locales);
+
     return BrandifyConfig(
         root: root,
         locales: locales,
@@ -138,7 +176,9 @@ class BrandifyConfig {
         frame: frame,
         export: export,
         app: app,
-        metadata: metadata);
+        metadata: metadata,
+        appStore: appStore,
+        featureGraphic: featureGraphic);
   }
 }
 
@@ -539,10 +579,12 @@ const _reservedWords = {
 ///     description: |                       # both stores' full description
 ///       Everything in one place.
 ///     keywords: [tasks, todo, planner]     # App Store only; or "tasks,todo,planner"
+///     promotional_text: Now with sync.     # App Store only; changeable without a release
 ///     release_notes: Faster sync.          # App Store "What's New", Play changelog
 /// ```
 class LocaleMetadata {
-  LocaleMetadata({this.name, this.subtitle, this.description, this.keywords, this.releaseNotes});
+  LocaleMetadata(
+      {this.name, this.subtitle, this.description, this.keywords, this.promotionalText, this.releaseNotes});
 
   final String? name;
   final String? subtitle;
@@ -550,15 +592,17 @@ class LocaleMetadata {
 
   /// Comma-separated, as App Store Connect takes them.
   final String? keywords;
+  final String? promotionalText;
   final String? releaseNotes;
 
-  static const keys = ['name', 'subtitle', 'description', 'keywords', 'release_notes'];
+  static const keys = ['name', 'subtitle', 'description', 'keywords', 'promotional_text', 'release_notes'];
 
   String? operator [](String key) => switch (key) {
         'name' => name,
         'subtitle' => subtitle,
         'description' => description,
         'keywords' => keywords,
+        'promotional_text' => promotionalText,
         'release_notes' => releaseNotes,
         _ => throw ArgumentError(key),
       };
@@ -581,6 +625,7 @@ class LocaleMetadata {
         subtitle: _optString(lm, 'subtitle'),
         description: _optString(lm, 'description'),
         keywords: _keywords(lm),
+        promotionalText: _optString(lm, 'promotional_text'),
         releaseNotes: _optString(lm, 'release_notes'),
       );
     }
@@ -598,6 +643,248 @@ class LocaleMetadata {
       if (w.contains(',')) throw _err(n.nodes[i], 'A keyword in a list can\'t contain ",".');
     }
     return words.isEmpty ? null : words.join(',');
+  }
+}
+
+/// App Store Connect's app categories, by the id deliver takes.
+const appStoreCategories = {
+  'BOOKS', 'BUSINESS', 'DEVELOPER_TOOLS', 'EDUCATION', 'ENTERTAINMENT', 'FINANCE', 'FOOD_AND_DRINK', //
+  'GAMES', 'GRAPHICS_AND_DESIGN', 'HEALTH_AND_FITNESS', 'LIFESTYLE', 'MAGAZINES_AND_NEWSPAPERS',
+  'MEDICAL', 'MUSIC', 'NAVIGATION', 'NEWS', 'PHOTO_AND_VIDEO', 'PRODUCTIVITY', 'REFERENCE',
+  'SHOPPING', 'SOCIAL_NETWORKING', 'SPORTS', 'STICKERS', 'TRAVEL', 'UTILITIES', 'WEATHER',
+};
+
+/// `app_store:`. App Store fields that aren't per-locale text, written by
+/// `brandify metadata` for deliver. Every field may be left empty; `brandify
+/// doctor` says which ones App Store Connect needs before a submission.
+/// Any value may use `${NAME}`, read from the environment when written.
+///
+/// ```yaml
+/// app_store:
+///   primary_category: productivity        # e.g. utilities, "Photo & Video"
+///   secondary_category: business
+///   copyright: 2026 Acme Inc.
+///   support_url: https://acme.example/support     # every locale
+///   privacy_url: https://acme.example/privacy     # every locale
+///   marketing_url: https://acme.example           # every locale
+///   review:                               # App Review information
+///     first_name: ${REVIEW_FIRST_NAME}
+///     last_name: ${REVIEW_LAST_NAME}
+///     email: ${REVIEW_EMAIL}
+///     phone: ${REVIEW_PHONE}
+///     demo_user: demo@acme.example
+///     demo_password: ${REVIEW_DEMO_PASSWORD}
+///     notes: Sign in with the demo account.
+/// ```
+class AppStoreConfig {
+  AppStoreConfig({
+    this.primaryCategory,
+    this.secondaryCategory,
+    this.copyright,
+    this.supportUrl,
+    this.privacyUrl,
+    this.marketingUrl,
+    this.review = const {},
+  });
+
+  /// Ids from [appStoreCategories].
+  final String? primaryCategory;
+  final String? secondaryCategory;
+  final String? copyright;
+  final String? supportUrl;
+  final String? privacyUrl;
+  final String? marketingUrl;
+
+  /// [reviewKeys] key -> value as written (`${NAME}` not yet expanded).
+  final Map<String, String> review;
+
+  static const keys = [
+    'primary_category', 'secondary_category', 'copyright', 'support_url', 'privacy_url', //
+    'marketing_url', 'review',
+  ];
+  static const reviewKeys = ['first_name', 'last_name', 'email', 'phone', 'demo_user', 'demo_password', 'notes'];
+
+  /// The review fields App Store Connect needs before a submission.
+  static const reviewContactKeys = ['first_name', 'last_name', 'email', 'phone'];
+
+  /// Every value with its `app_store.` key, for listing `${NAME}` uses.
+  Map<String, String> get values => {
+        if (primaryCategory != null) 'primary_category': primaryCategory!,
+        if (secondaryCategory != null) 'secondary_category': secondaryCategory!,
+        if (copyright != null) 'copyright': copyright!,
+        if (supportUrl != null) 'support_url': supportUrl!,
+        if (privacyUrl != null) 'privacy_url': privacyUrl!,
+        if (marketingUrl != null) 'marketing_url': marketingUrl!,
+        for (final MapEntry(:key, :value) in review.entries) 'review.$key': value,
+      };
+
+  static AppStoreConfig _parse(YamlMap m) {
+    _rejectUnknown(m, keys.toSet());
+    String? category(String key) {
+      final v = _optString(m, key);
+      if (v == null) return null;
+      final id = v.toUpperCase().replaceAll('&', 'AND').replaceAll(RegExp(r'[^A-Z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+      if (!appStoreCategories.contains(id)) {
+        throw _err(m.nodes[key]!, 'Unknown App Store category "$v". Use one of: '
+            '${(appStoreCategories.toList()..sort()).map((c) => c.toLowerCase()).join(', ')}.');
+      }
+      return id;
+    }
+
+    String? url(String key) {
+      final v = _optString(m, key);
+      if (v != null && !v.contains(r'${') && !RegExp(r'^https?://\S+$').hasMatch(v)) {
+        throw _err(m.nodes[key]!, '`$key` must be a full URL starting with https:// (or http://).');
+      }
+      return v;
+    }
+
+    final primary = category('primary_category'), secondary = category('secondary_category');
+    if (primary != null && primary == secondary) {
+      throw _err(m.nodes['secondary_category']!, 'secondary_category is the same as primary_category.');
+    }
+
+    final review = <String, String>{};
+    final rn = m.nodes['review'];
+    if (rn != null && !(rn is YamlScalar && rn.value == null)) {
+      final rm = _map(rn, 'app_store.review');
+      _rejectUnknown(rm, reviewKeys.toSet());
+      for (final k in reviewKeys) {
+        final v = _optString(rm, k);
+        if (v != null) review[k] = v;
+      }
+    }
+    return AppStoreConfig(
+      primaryCategory: primary,
+      secondaryCategory: secondary,
+      copyright: _optString(m, 'copyright'),
+      supportUrl: url('support_url'),
+      privacyUrl: url('privacy_url'),
+      marketingUrl: url('marketing_url'),
+      review: review,
+    );
+  }
+}
+
+/// File next to brandify.yaml that `${NAME}` is also read from; keep it out
+/// of git.
+const dotEnvFile = '.env';
+
+/// The values `${NAME}` expands to: [dotEnvFile] in [root] (if any), with
+/// [environment] (the process environment by default) taking precedence.
+Map<String, String> brandifyEnv(String root, [Map<String, String>? environment]) => {
+      ...parseDotEnv(File(p.join(root, dotEnvFile))),
+      ...(environment ?? Platform.environment),
+    };
+
+/// `NAME=value` lines; `#` comments, blank lines, an `export ` prefix and
+/// matching single or double quotes around the value are allowed. Empty
+/// when [file] doesn't exist.
+Map<String, String> parseDotEnv(File file) {
+  if (!file.existsSync()) return const {};
+  final out = <String, String>{};
+  for (final (i, raw) in file.readAsLinesSync().indexed) {
+    final line = raw.trim();
+    if (line.isEmpty || line.startsWith('#')) continue;
+    final m = RegExp(r'^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$').firstMatch(line);
+    if (m == null) {
+      throw ConfigException('${p.relative(file.path)}:${i + 1}: expected NAME=value, got "$line".');
+    }
+    var v = m.group(2)!;
+    final q = v.isNotEmpty ? v[0] : '';
+    if ((q == '"' || q == "'") && v.length >= 2 && v.endsWith(q)) {
+      v = v.substring(1, v.length - 1);
+    } else {
+      v = v.replaceFirst(RegExp(r'\s+#.*$'), '');
+    }
+    out[m.group(1)!] = v;
+  }
+  return out;
+}
+
+final _envRef = RegExp(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}');
+
+/// The `${NAME}` names [value] uses.
+List<String> envRefs(String value) => [for (final m in _envRef.allMatches(value)) m.group(1)!];
+
+/// [value] with every `${NAME}` replaced from [env]. Names not set there
+/// (or set empty) are added to [unset] and left in place.
+String expandEnv(String value, Map<String, String> env, List<String> unset) =>
+    value.replaceAllMapped(_envRef, (m) {
+      final v = env[m.group(1)!];
+      if (v == null || v.isEmpty) {
+        unset.add(m.group(1)!);
+        return m.group(0)!;
+      }
+      return v;
+    });
+
+/// `feature_graphic:`: the 1024×500 banner Google Play requires, made by
+/// `brandify frame` and placed by `brandify export`. Present (even empty)
+/// turns it on; every key falls back to the rest of brandify.yaml.
+///
+/// ```yaml
+/// feature_graphic:
+///   background: ['#0B1F3A', '#2E5BFF']   # default: frame.background
+///   text_color: '#FFFFFF'                # default: white or black, whichever reads better
+///   logo: assets/logo.png                # default: app.logo_path; `none` for text only
+///   font: fonts/Brand-Bold.ttf           # default: frame.font
+///   text:                                # default: metadata.<locale> name and subtitle
+///     en-US: {headline: Acme Tasks, subheadline: Plan your day}
+/// ```
+class FeatureGraphicConfig {
+  FeatureGraphicConfig({this.background, this.textColor, this.logo, this.font, this.text = const {}});
+
+  /// ARGB colours, or null for `frame.background`.
+  final List<int>? background;
+
+  /// ARGB, or null to pick white or black against the background.
+  final int? textColor;
+
+  /// Relative to the config's directory, `none`, or null for `app.logo_path`.
+  final String? logo;
+
+  /// Relative to the config's directory, or null for `frame.font`.
+  final String? font;
+
+  /// locale -> text, where it isn't taken from `metadata:`.
+  final Map<String, Caption> text;
+
+  static FeatureGraphicConfig _parse(YamlMap m, List<String> locales) {
+    _rejectUnknown(m, {'background', 'text_color', 'logo', 'font', 'text'});
+    List<int>? background;
+    final bg = m.nodes['background'];
+    if (bg != null) {
+      final nodes = bg is YamlList ? bg.nodes : [bg];
+      if (nodes.isEmpty) throw _err(bg, '`background` needs at least one colour.');
+      background = [for (final n in nodes) _color(n)];
+    }
+    final tc = m.nodes['text_color'];
+    final text = <String, Caption>{};
+    final tn = m.nodes['text'];
+    if (tn != null) {
+      for (final MapEntry(key: k, value: v) in _map(tn, 'feature_graphic.text').nodes.entries) {
+        final locale = _scalarString(k as YamlNode, 'feature_graphic.text locale');
+        if (!locales.contains(locale)) {
+          throw _err(k, 'feature_graphic.text names "$locale", which is not in `locales` (${locales.join(', ')}).');
+        }
+        if (v is YamlScalar) {
+          text[locale] = Caption(_scalarString(v, 'feature_graphic.text.$locale'));
+        } else {
+          final cm = _map(v, 'feature_graphic.text.$locale');
+          _rejectUnknown(cm, {'headline', 'subheadline'});
+          text[locale] = Caption(_string(cm, 'headline', required: true)!, _string(cm, 'subheadline'));
+        }
+      }
+    }
+    return FeatureGraphicConfig(
+      background: background,
+      textColor: tc == null ? null : _color(tc),
+      logo: _string(m, 'logo'),
+      font: _string(m, 'font'),
+      text: text,
+    );
   }
 }
 

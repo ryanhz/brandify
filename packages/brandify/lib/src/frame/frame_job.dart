@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:path/path.dart' as p;
 
@@ -11,7 +12,7 @@ import '../store/slots.dart';
 
 /// Version of the job file read by `package:brandify_flutter/frame.dart`.
 /// Keep in sync with `frameJobVersion` there.
-const frameJobVersion = 1;
+const frameJobVersion = 2;
 
 /// One raw capture to frame.
 class FrameItem {
@@ -61,9 +62,28 @@ class FrameItem {
       };
 }
 
+/// One locale's Google Play feature graphic to render.
+class FeatureGraphicItem {
+  FeatureGraphicItem({required this.locale, required this.out, required this.caption});
+  final String locale;
+
+  /// Absolute.
+  final String out;
+  final Caption caption;
+
+  Map<String, Object?> toJson() => {'locale': locale, 'out': out, 'text': caption.toJson()};
+}
+
+/// Folder under `frame.output` for feature graphics; can't be a device id.
+const featureGraphicFolder = '_feature_graphic';
+
 class FrameJob {
-  FrameJob(this.items, this.style);
+  FrameJob(this.items, this.style, {this.featureGraphics = const [], this.featureGraphicStyle = const {}});
   final List<FrameItem> items;
+  final List<FeatureGraphicItem> featureGraphics;
+
+  /// `background`, `text_color` (ARGB ints), `logo`, `font` (paths or absent).
+  final Map<String, Object?> featureGraphicStyle;
 
   /// `template`, `caption_area`, `background` (ARGB ints), `device`
   /// (`screen`/`bezel`), `font` (path).
@@ -73,6 +93,11 @@ class FrameJob {
         'brandify_frame_job': frameJobVersion,
         'style': style,
         'items': [for (final i in items) i.toJson()],
+        if (featureGraphics.isNotEmpty)
+          'feature_graphic': {
+            'style': featureGraphicStyle,
+            'items': [for (final f in featureGraphics) f.toJson()],
+          },
       });
 
   /// Reads the capture manifests under `capture.output` and pairs every shot
@@ -103,7 +128,11 @@ class FrameJob {
         items.addAll(_itemsFor(config, device, locale, dir, manifestFile, logger));
       }
     }
-    if (items.isEmpty) {
+    final wantsAndroid = config.devices.any((d) => wantDevices.contains(d.id) && d.platform == DevicePlatform.android);
+    final graphics = config.featureGraphic == null || !wantsAndroid
+        ? const <FeatureGraphicItem>[]
+        : featureGraphicItems(config, config.locales.where(wantLocales.contains), logger);
+    if (items.isEmpty && graphics.isEmpty) {
       throw BrandifyException(
           'Nothing to frame: no captures under ${p.relative(config.outputDir)}. Run `brandify capture` first.');
     }
@@ -118,7 +147,56 @@ class FrameJob {
       'background': frame.background,
       'device': frame.device.name,
       if (font != null) 'font': font,
-    });
+    }, featureGraphics: graphics, featureGraphicStyle: graphics.isEmpty ? const {} : resolveFeatureGraphicStyle(config));
+  }
+
+  /// The feature graphics of [locales] (those Google Play lists). Throws if
+  /// one has no text.
+  static List<FeatureGraphicItem> featureGraphicItems(
+      BrandifyConfig config, Iterable<String> locales, Logger logger) {
+    final out = <FeatureGraphicItem>[];
+    final missing = <String>[];
+    for (final locale in locales) {
+      if (config.storeLocaleFor(Store.play, locale) == null) continue;
+      final caption = config.featureGraphicText(locale);
+      if (caption == null) {
+        missing.add(locale);
+        continue;
+      }
+      out.add(FeatureGraphicItem(
+          locale: locale,
+          out: p.join(config.framedDir, featureGraphicFolder, '$locale.png'),
+          caption: caption));
+    }
+    if (missing.isNotEmpty) {
+      throw BrandifyException('The feature graphic has no text for ${missing.join(', ')}. Fill in '
+          '${missing.map((l) => 'metadata.$l.name').join(', ')} or set feature_graphic.text.');
+    }
+    return out;
+  }
+
+  /// The feature graphic's look, with every default resolved. Throws if a
+  /// file it names is missing.
+  static Map<String, Object?> resolveFeatureGraphicStyle(BrandifyConfig config) {
+    final fg = config.featureGraphic!;
+    final background = fg.background ?? config.frame.background;
+    final logo = config.featureGraphicLogo;
+    if (logo != null && !File(logo).existsSync()) {
+      throw BrandifyException('${fg.logo == null ? 'app.logo_path' : 'feature_graphic.logo'}: '
+          '${p.relative(logo, from: config.root)} does not exist. Set feature_graphic.logo (`none` for text only).');
+    }
+    final fontRel = fg.font ?? config.frame.font;
+    final font = fontRel == null ? null : p.normalize(p.join(config.root, fontRel));
+    if (font != null && !File(font).existsSync()) {
+      throw BrandifyException('${fg.font == null ? 'frame.font' : 'feature_graphic.font'}: '
+          '$fontRel not found in ${config.root}.');
+    }
+    return {
+      'background': background,
+      'text_color': fg.textColor ?? readableOn(background),
+      if (logo != null) 'logo': logo,
+      if (font != null) 'font': font,
+    };
   }
 
   static List<FrameItem> _itemsFor(BrandifyConfig config, DeviceConfig device,
@@ -186,6 +264,19 @@ class FrameJob {
           );
         }(),
     ];
+  }
+
+  /// Opaque white or near-black, whichever reads better on the average of
+  /// [background] (ARGB).
+  static int readableOn(List<int> background) {
+    double channel(int shift) {
+      final c = background.map((b) => (b >> shift) & 0xFF).reduce((a, b) => a + b) / background.length / 255;
+      return c <= 0.04045 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+    }
+
+    final luminance = 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
+    // Contrast with white beats contrast with black below about 0.18.
+    return luminance < 0.18 ? 0xFFFFFFFF : 0xFF111111;
   }
 
   static Set<String> _select(String what, Iterable<String> known, Set<String>? wanted) {

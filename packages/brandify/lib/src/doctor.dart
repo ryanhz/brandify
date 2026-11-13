@@ -7,6 +7,7 @@ import 'package:yaml/yaml.dart';
 import 'config.dart';
 import 'device/android.dart';
 import 'device/ios.dart';
+import 'frame/frame_job.dart';
 import 'icons/icon_generator.dart';
 import 'logger.dart';
 import 'metadata/metadata_writer.dart';
@@ -69,6 +70,7 @@ class Doctor {
     _skipped.clear();
     final checks = <Check>[await _flutter(), ..._project()];
     final config = _config(checks);
+    if (config != null) checks.addAll(await _secrets(config));
     final selected = config == null ? null : _select(config, checks);
     final android = selected?.whereType<AndroidDeviceConfig>().toList();
     final ios = selected?.whereType<IosDeviceConfig>().toList();
@@ -226,14 +228,99 @@ class Doctor {
         checks.add(Check(CheckStatus.warn, 'app.logo_path is not usable', hint: e.message));
       }
     }
+    final writer = MetadataWriter(config: c, logger: Logger(), env: brandifyEnv(c.root, env));
     if (c.metadata.isNotEmpty) {
-      final problems = MetadataWriter(config: c, logger: Logger()).validate(stores: Store.values.toSet());
+      // app_store: problems are reported by its own check.
+      final problems = writer.validate(stores: Store.values.toSet(), includeAppStore: false);
       checks.add(problems.isEmpty
           ? Check(CheckStatus.ok, 'metadata: ${c.metadata.keys.join(', ')}')
           : Check(CheckStatus.warn, 'metadata: not ready for `brandify metadata`', hint: problems.join('\n')));
     }
+    checks.add(_appStore(c, writer));
+    if (c.devices.any((d) => d.platform == DevicePlatform.android)) checks.add(_featureGraphic(c));
     return checks;
   }
+
+  /// `app_store:` against what App Store Connect needs before a submission.
+  Check _appStore(BrandifyConfig c, MetadataWriter writer) {
+    final a = c.appStore;
+    final gaps = appStoreGaps(a);
+    if (a == null) {
+      return Check(CheckStatus.skip, 'app_store: not set',
+          hint: 'Before a submission App Store Connect needs a category, copyright, support and privacy '
+              'URLs and an App Review contact. Add an `app_store:` block (see the README) and '
+              '`brandify metadata` writes them for deliver.');
+    }
+    final problems = writer.appStoreProblems();
+    if (problems.isNotEmpty) {
+      return Check(CheckStatus.warn, 'app_store: not ready for `brandify metadata`',
+          hint: [
+            ...problems,
+            if (problems.any((l) => l.contains('not set in the environment')))
+              'Set them in the environment or in $dotEnvFile next to brandify.yaml (NAME=value lines).',
+          ].join('\n'));
+    }
+    if (gaps.isNotEmpty) {
+      return Check(CheckStatus.warn, 'app_store: ${gaps.length} field${gaps.length == 1 ? '' : 's'} App Store Connect needs '
+          'before a submission ${gaps.length == 1 ? 'is' : 'are'} empty',
+          hint: gaps.join(', '));
+    }
+    return Check(CheckStatus.ok, 'app_store: ${a.primaryCategory!.toLowerCase()}, review contact '
+        '${a.review['first_name']} ${a.review['last_name']}');
+  }
+
+  /// `feature_graphic:`: whether `brandify frame` can make one.
+  Check _featureGraphic(BrandifyConfig c) {
+    final fg = c.featureGraphic;
+    if (fg == null) {
+      return Check(CheckStatus.skip, 'feature_graphic: not set (Google Play needs one to publish)',
+          hint: 'Add `feature_graphic: {}` to brandify.yaml and `brandify frame` makes the 1024×500 banner '
+              'from app.logo_path and each locale\'s metadata name and subtitle.');
+    }
+    try {
+      final items = FrameJob.featureGraphicItems(c, c.locales, Logger());
+      final style = FrameJob.resolveFeatureGraphicStyle(c);
+      final logo = style['logo'] as String?;
+      return Check(CheckStatus.ok, 'feature_graphic: ${items.map((i) => '${i.locale} "${i.caption.headline}"').join(', ')}, '
+          '${logo == null ? 'text only' : 'logo ${p.relative(logo, from: c.root)}'}');
+    } on BrandifyException catch (e) {
+      return Check(CheckStatus.warn, 'feature_graphic: `brandify frame` can\'t make it', hint: e.message);
+    }
+  }
+
+  /// Files that hold `${NAME}` values must stay out of git: `.env`, and the
+  /// fastlane files those values are written into.
+  Future<List<Check>> _secrets(BrandifyConfig c) async {
+    final dotEnv = p.join(c.root, dotEnvFile);
+    final written = <String>[
+      for (final MapEntry(:key, :value) in (c.appStore?.values ?? const <String, String>{}).entries)
+        if (envRefs(value).isNotEmpty)
+          for (final code in _appStoreCodes(c, key))
+            p.join(c.fastlaneDir, 'metadata', appStoreFiles[key]!.replaceAll('{locale}', code)),
+    ];
+    final paths = [if (File(dotEnv).existsSync() || written.isNotEmpty) dotEnv, ...written];
+    if (paths.isEmpty) return const [];
+    final tracked = <String>[];
+    for (final path in paths) {
+      final r = await _try('git', ['-C', c.root, 'check-ignore', '-q', '--no-index', path]);
+      if (r == null || r.exitCode == 128) return const []; // no git, or not a repository
+      if (r.exitCode == 1) tracked.add(p.relative(path, from: c.root));
+    }
+    if (tracked.isEmpty) return [Check(CheckStatus.ok, 'Secrets: .env and the files written from \${...} are git-ignored')];
+    return [
+      Check(CheckStatus.warn, 'Secrets: ${tracked.length} file${tracked.length == 1 ? '' : 's'} with \${...} values '
+          '${tracked.length == 1 ? 'is' : 'are'} not git-ignored',
+          hint: 'Add to .gitignore:\n${tracked.map((t) => '  $t').join('\n')}')
+    ];
+  }
+
+  /// App Store locale folders an `app_store.<key>` file is written to.
+  List<String> _appStoreCodes(BrandifyConfig c, String key) => appStoreFiles[key]!.startsWith('{locale}/')
+      ? [
+          for (final l in c.metadata.keys)
+            if (c.storeLocaleFor(Store.appStore, l) case final code?) code
+        ]
+      : [''];
 
   // -- Android ---------------------------------------------------------------
 

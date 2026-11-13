@@ -1,6 +1,6 @@
 # brandify
 
-**Status: 0.2.2.** Capture, framing and export work on Android emulators and iOS
+**Status: 0.3.0.** Capture, framing and export work on Android emulators and iOS
 simulators. `export` and `metadata` write the folders fastlane uploads from; uploading them with
 `supply` / `deliver` has not been tried yet.
 
@@ -9,12 +9,12 @@ brandify takes an unbranded Flutter app to a branded store presence. You describ
 
 | Command | What it does |
 |---|---|
-| `init` | Writes `brandify.yaml` (with `app:` and `metadata:` to fill in) and a capture test |
-| `doctor` | Checks the tools, devices and config; changes nothing |
-| `build` | Store screenshots: `capture` → `frame` → `export`, in one unattended run |
+| `init` | Writes `brandify.yaml` (with `app:`, `metadata:` and `app_store:` to fill in, each field commented) and a capture test |
+| `doctor` | Checks the tools, devices and config, and says what the stores still need; changes nothing |
+| `build` | Store screenshots (and the Google Play feature graphic): `capture` → `frame` → `export`, in one unattended run |
 | `rename` | Sets the display name, Android package and iOS bundle ID in `android/` and `ios/` (dry run unless `--force`) |
 | `icons` | Makes the Android and iOS launcher icons from your logo (via flutter_launcher_icons) |
-| `metadata` | Writes the store listing text (name, subtitle, description, keywords, release notes) for fastlane |
+| `metadata` | Writes the store listing text (name, subtitle, description, keywords, promotional text, release notes) and the App Store category, URLs, copyright and App Review information for fastlane |
 
 The screenshots are taken from a **real simulator or emulator**, driven by an `integration_test`
 script:
@@ -120,8 +120,11 @@ Checks Flutter (3.35.3 or newer), that your app depends on `brandify_flutter`, `
 the capture test, the Android SDK (`adb`, `emulator`, each configured AVD), Xcode and each configured
 simulator, fastlane (optional), and the `app:` and `metadata:` blocks: whether `app.name`,
 `app.android_package` and `app.ios_bundle_id` are filled in, whether `app.logo_path` exists and is a
-square PNG (and `flutter_launcher_icons` is a dependency), and whether each `metadata:` locale has
-what both stores need. Those last checks are warnings: they never stop a capture. The Android SDK is found like Flutter finds it: `$ANDROID_HOME`,
+square PNG (and `flutter_launcher_icons` is a dependency), whether each `metadata:` locale has
+what both stores need, which `app_store:` fields App Store Connect still needs before a submission
+(and any `${NAME}` that isn't set), whether `brandify frame` can make the feature graphic, and
+whether `.env` and the files written from `${NAME}` values are git-ignored. Those last checks are
+warnings: they never stop a capture. The Android SDK is found like Flutter finds it: `$ANDROID_HOME`,
 `$ANDROID_SDK_ROOT`, Android Studio's default folder (`~/Library/Android/sdk` on macOS,
 `~/Android/Sdk` on Linux, `%LOCALAPPDATA%\Android\Sdk` on Windows), then `PATH`. It only reads: nothing is booted or changed. Every problem comes
 with what to do about it, and it exits 1 if a capture would fail.
@@ -210,6 +213,29 @@ The compositor is [app_deploy_screenshots](https://pub.dev/packages/app_deploy_s
 `MarketingFrame`, run in a widget test brandify generates on the host. The screen it frames is the
 real capture, re-rendered pixel for pixel; brandify never draws a status bar or camera cutout over it.
 
+### Feature graphic (Google Play)
+
+Google Play needs a 1024×500 feature graphic to publish. Add a `feature_graphic:` block and
+`brandify frame` makes one per locale (logo on the left, name and subtitle on the right, on the
+frame background) into `build/brandify/framed/_feature_graphic/`; `brandify export` places it.
+Present, even empty, turns it on; every key falls back to the rest of `brandify.yaml`:
+
+```yaml
+feature_graphic: {}                    # all defaults, or:
+feature_graphic:
+  background: ['#0B1F3A', '#2E5BFF']   # default: frame.background
+  text_color: '#FFFFFF'                # default: white or black, whichever reads better
+  logo: assets/logo.png                # default: app.logo_path; `none` for text only
+  font: fonts/Brand-Bold.ttf           # default: frame.font
+  text:                                # default: metadata.<locale> name and subtitle
+    en-US: {headline: Acme Tasks, subheadline: Plan your day}
+```
+
+Everything stays well inside the edges, since Play crops them in places and puts a play button in
+the middle when the listing has a video; long text shrinks to fit. It is only made when an Android
+device is part of the run, and not for locales set to `play: none`. It needs no capture, so
+`brandify frame` works before your first one.
+
 ### Export to fastlane
 
 ```bash
@@ -221,6 +247,7 @@ Copies the framed screenshots to where fastlane uploads them from, next to `bran
 | Store | Folder | Tool |
 |---|---|---|
 | Google Play | `fastlane/metadata/android/<locale>/images/{phone,sevenInch,tenInch}Screenshots/` | `supply` |
+| Google Play feature graphic | `fastlane/metadata/android/<locale>/images/featureGraphic.png` | `supply` |
 | App Store | `fastlane/screenshots/<locale>/` (display class told apart by pixel size) | `deliver` |
 
 - **Names:** `{n}_{name}.png` in the order your test shot them (`1_home.png`, `2_add_task.png`;
@@ -258,7 +285,7 @@ Copies the framed screenshots to where fastlane uploads them from, next to `bran
 
 ## App identity and store listing
 
-These commands read the `app:` and `metadata:` blocks of `brandify.yaml`. Run each one yourself,
+These commands read the `app:`, `metadata:` and `app_store:` blocks of `brandify.yaml`. Run each one yourself,
 when you need it. Each checks the fields it needs and names any that are missing before it changes
 anything.
 
@@ -276,8 +303,30 @@ metadata:
     description: |                 # both stores (≤ 4000)
       Everything in one place.
     keywords: [tasks, todo]        # App Store only (≤ 100 bytes, comma-joined)
+    promotional_text: Now with sync.  # App Store only (≤ 170); changeable without a release
     release_notes: Faster sync.    # App Store "What's New" (≤ 4000), Play changelog (≤ 500)
+
+app_store:                         # App Store fields that aren't per-locale text
+  primary_category: productivity   # any spelling: utilities, "Photo & Video", PHOTO_AND_VIDEO
+  secondary_category: business     # optional
+  copyright: 2026 Acme Inc.
+  support_url: https://acme.example/support   # written into every App Store locale
+  privacy_url: https://acme.example/privacy   # written into every App Store locale
+  marketing_url: https://acme.example         # optional
+  review:                          # App Review information; only Apple's reviewers see it
+    first_name: Ada
+    last_name: Lovelace
+    email: ada@acme.example
+    phone: +1 555 0100
+    demo_user: demo@acme.example   # only if the app needs a sign-in
+    demo_password: ${REVIEW_DEMO_PASSWORD}
+    notes: Sign in with the demo account.
 ```
+
+Any `app_store:` value may be `${NAME}`, read when `brandify metadata` runs from the environment or
+from `.env` next to `brandify.yaml` (`NAME=value` lines; the environment wins). Use it for secrets
+such as a demo password, and git-ignore `.env` and the file the value is written into
+(`fastlane/metadata/review_information/demo_password.txt`); `brandify doctor` checks both.
 
 ### `brandify rename`
 
@@ -337,11 +386,20 @@ Writes the listing text where fastlane uploads it from:
 | Store | Folder | Files |
 |---|---|---|
 | App Store (`deliver`) | `fastlane/metadata/<locale>/` | `name.txt`, `subtitle.txt`, `description.txt`, `keywords.txt`, `release_notes.txt` |
+| App Store (`deliver`) | `fastlane/metadata/<locale>/` | from `app_store:` `support_url.txt`, `privacy_url.txt`, `marketing_url.txt`; `promotional_text.txt` |
+| App Store (`deliver`) | `fastlane/metadata/` | `primary_category.txt`, `secondary_category.txt`, `copyright.txt`, `review_information/{first_name,last_name,email_address,phone_number,demo_user,demo_password,notes}.txt` |
 | Google Play (`supply`) | `fastlane/metadata/android/<locale>/` | `title.txt`, `short_description.txt`, `full_description.txt`, `changelogs/<versionCode>.txt` |
 
 - **Required:** the App Store needs `name` and `description`; Google Play needs `name`, `subtitle`
   and `description`. A missing one, or text over a store's limit, is an error that lists every
   locale and field at once, before anything is written. Optional fields that are empty are skipped.
+- **`app_store:`:** App Store Connect needs `primary_category`, `copyright`, `support_url`,
+  `privacy_url` and the review contact (`first_name`, `last_name`, `email`, `phone`) before a
+  submission. They're optional here (`brandify doctor` lists the missing ones); a `${NAME}` that
+  isn't set, or a URL that isn't one, is an error before anything is written. The files outside the
+  locale folders are written only when every locale is (no `-l`). Age rating and App Privacy aren't
+  covered: fastlane takes them from separate files (`app_rating_config_path`,
+  `upload_app_privacy_details_to_app_store`).
 - **versionCode:** the Play changelog is named after the build number in `pubspec.yaml`
   (`version: 1.2.0+42` → `changelogs/42.txt`), or `--version-code`.
 - **Locales** map to store codes as for export, including `export.locales` overrides and `none`.
@@ -349,7 +407,7 @@ Writes the listing text where fastlane uploads it from:
   didn't write that holds other text (e.g. from `fastlane deliver init`) stops it, and
   `--replace` overwrites it; one that already holds the same text is adopted. When you empty a
   field, the file brandify wrote for it is deleted, so the store doesn't keep the old text. Other
-  files in these folders (`copyright.txt`, `review_information/`, images) are never touched.
+  files in these folders (images, files for fields brandify doesn't know) are never touched.
 
 ## Running headless and in CI
 

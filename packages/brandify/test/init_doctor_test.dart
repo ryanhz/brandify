@@ -167,7 +167,10 @@ void main() {
     test('all good', () async {
       project();
       final cs = await doctor(tools(fastlane: true));
-      expect(cs.map((c) => c.status).toSet(), {CheckStatus.ok}, reason: show(cs));
+      // app_store and feature_graphic aren't set: notes (-), not warnings.
+      expect(cs.map((c) => c.status).toSet(), {CheckStatus.ok, CheckStatus.skip}, reason: show(cs));
+      expect(cs.where((c) => c.status == CheckStatus.skip).map((c) => c.title.split(':').first),
+          ['app_store', 'feature_graphic']);
       expect(show(cs), allOf(contains('Flutter 3.38.1 (Dart 3.10.0)'), contains('[pixel] AVD Pixel_9'),
           contains('[iphone69] iPhone 17 Pro Max (iOS 26.4)'), contains('Xcode 27.0'), contains('fastlane 2.228.0'),
           contains('2 locales (en-US, de-DE), 2 devices'), contains('app: "Acme" (Android com.acme.app, iOS com.acme.app)')));
@@ -246,7 +249,7 @@ void main() {
         project(extra: extra);
         final cs = await doctor(tools());
         expect(printChecks(cs, logger), 0, reason: show(cs));
-        return show(cs.where((c) => c.title.startsWith(RegExp('app|metadata'))).toList());
+        return show(cs.where((c) => c.title.startsWith(RegExp(r'app[:.]|metadata'))).toList());
       }
 
       expect(await appChecks(''), '- app: not filled in Only `brandify rename` and `brandify icons` need it.');

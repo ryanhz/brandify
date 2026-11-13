@@ -26,7 +26,8 @@ class MetadataCommand extends Command<int> {
   String get name => 'metadata';
   @override
   String get description => 'Write the store listing text in brandify.yaml (`metadata:`) into the fastlane '
-      'folders: name, subtitle, description, keywords, release notes.';
+      'folders: name, subtitle, description, keywords, promotional text, release notes, and the App Store '
+      'category, URLs, copyright and App Review information (`app_store:`).';
 
   @override
   Future<int> run() async {

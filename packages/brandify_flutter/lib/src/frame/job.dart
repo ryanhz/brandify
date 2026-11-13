@@ -4,7 +4,7 @@ import 'dart:ui' show Color, Size;
 
 /// Keep in sync with `frameJobVersion` in
 /// `packages/brandify/lib/src/frame/frame_job.dart`.
-const frameJobVersion = 1;
+const frameJobVersion = 2;
 
 enum FrameDevice { screen, bezel }
 
@@ -95,10 +95,43 @@ class FrameItem {
   bool get tablet => slot.contains('ipad') || slot.contains('tablet');
 }
 
+/// Look of the Google Play feature graphic, every default resolved by the CLI.
+class FeatureGraphicStyle {
+  const FeatureGraphicStyle({
+    this.background = const [Color(0xFFF2F2F7)],
+    this.textColor = const Color(0xFF111111),
+    this.logo,
+    this.font,
+  });
+
+  /// One colour: solid. Several: a top-to-bottom gradient.
+  final List<Color> background;
+  final Color textColor;
+
+  /// Image file, or null for text only.
+  final String? logo;
+
+  /// Font file, loaded as [fontFamily].
+  final String? font;
+
+  static const fontFamily = 'BrandifyFeatureGraphic';
+}
+
+/// One locale's feature graphic and where it goes.
+class FeatureGraphicItem {
+  const FeatureGraphicItem({required this.locale, required this.out, required this.text});
+  final String locale;
+  final String out;
+  final FrameCaption text;
+}
+
 class FrameJob {
-  const FrameJob(this.style, this.items);
+  const FrameJob(this.style, this.items,
+      {this.featureGraphicStyle = const FeatureGraphicStyle(), this.featureGraphics = const []});
   final FrameStyle style;
   final List<FrameItem> items;
+  final FeatureGraphicStyle featureGraphicStyle;
+  final List<FeatureGraphicItem> featureGraphics;
 
   static FrameJob read(String path) {
     final json = jsonDecode(File(path).readAsStringSync()) as Map<String, Object?>;
@@ -119,7 +152,28 @@ class FrameJob {
       device: FrameDevice.values.byName(s['device'] as String),
       font: s['font'] as String?,
     );
-    return FrameJob(style, [
+    final fg = json['feature_graphic'] as Map<String, Object?>?;
+    final fgStyle = fg?['style'] as Map<String, Object?>?;
+    final featureGraphicStyle = fgStyle == null
+        ? const FeatureGraphicStyle()
+        : FeatureGraphicStyle(
+            background: [for (final c in fgStyle['background'] as List) Color(c as int)],
+            textColor: Color(fgStyle['text_color'] as int),
+            logo: fgStyle['logo'] as String?,
+            font: fgStyle['font'] as String?,
+          );
+    final featureGraphics = [
+      for (final f in ((fg?['items'] as List?) ?? const []).cast<Map<String, Object?>>())
+        FeatureGraphicItem(
+          locale: f['locale'] as String,
+          out: f['out'] as String,
+          text: () {
+            final t = f['text'] as Map<String, Object?>;
+            return FrameCaption(t['headline'] as String, t['subheadline'] as String?);
+          }(),
+        ),
+    ];
+    return FrameJob(style, featureGraphicStyle: featureGraphicStyle, featureGraphics: featureGraphics, [
       for (final i in (json['items'] as List).cast<Map<String, Object?>>())
         FrameItem(
           device: i['device'] as String,

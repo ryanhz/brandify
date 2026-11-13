@@ -59,11 +59,13 @@ class FastlaneExporter {
   List<ExportedImage> run({Set<String>? devices, Set<String>? locales, bool replace = false}) {
     final job = FrameJob.build(config, devices: devices, locales: locales, logger: logger);
     final plan = _plan(job.items);
-    if (plan.isEmpty) {
+    final graphics = _planFeatureGraphics(job.featureGraphics);
+    if (plan.isEmpty && graphics.isEmpty) {
       throw BrandifyException('Nothing to export: every captured locale is set to `none` in export.locales.');
     }
     final owned = OwnershipRecord.load(config.fastlaneDir);
     final stale = _survey(plan, owned, replace: replace);
+    stale.addAll(_surveyFeatureGraphics(graphics, owned, replace: replace));
     for (final f in stale) {
       File(f).deleteSync();
       owned.forget(f);
@@ -76,10 +78,102 @@ class FastlaneExporter {
       written.add(_write(e));
       owned.record(e.path);
     }
+    for (final g in graphics) {
+      _writeFeatureGraphic(g);
+      owned.record(g.path);
+    }
     owned.save();
     _verify(written);
+    _verifyFeatureGraphics(graphics);
     _report(written);
+    for (final g in graphics) {
+      logger.info('[${g.item.locale}] Google Play feature graphic -> ${p.relative(g.path)}');
+    }
     return written;
+  }
+
+  // -- the feature graphic ---------------------------------------------------
+
+  /// Where each framed feature graphic goes:
+  /// `metadata/android/<play-locale>/images/featureGraphic.png`.
+  List<({FeatureGraphicItem item, String path})> _planFeatureGraphics(List<FeatureGraphicItem> items) => [
+        for (final i in items)
+          () {
+            final framed = File(i.out);
+            final size = framed.existsSync() ? pngSize(framed.readAsBytesSync()) : null;
+            if (size == null) {
+              throw BrandifyException('[${i.locale}] no feature graphic at ${p.relative(i.out)}. '
+                  'Run `brandify frame` first.');
+            }
+            if (size.width != playFeatureGraphicWidth || size.height != playFeatureGraphicHeight) {
+              throw BrandifyException('[${i.locale}] ${p.relative(i.out)} is ${size.width}×${size.height}, '
+                  'not $playFeatureGraphicWidth×$playFeatureGraphicHeight. Run `brandify frame` again.');
+            }
+            final code = config.storeLocaleFor(Store.play, i.locale)!;
+            return (item: i, path: p.join(config.fastlaneDir, 'metadata', 'android', code, 'images', 'featureGraphic.png'));
+          }(),
+      ];
+
+  static final _featureGraphicName = RegExp(r'^featureGraphic\.(png|jpe?g)$', caseSensitive: false);
+
+  /// supply uploads one `featureGraphic.*`: any other one in the folder (or
+  /// one brandify didn't write at the target) is foreign, as for screenshots.
+  List<String> _surveyFeatureGraphics(List<({FeatureGraphicItem item, String path})> graphics,
+      OwnershipRecord owned, {required bool replace}) {
+    final stale = <String>[];
+    final foreign = <String>[];
+    for (final g in graphics) {
+      final dir = Directory(p.dirname(g.path));
+      if (!dir.existsSync()) continue;
+      for (final f in dir.listSync().whereType<File>()) {
+        if (!_featureGraphicName.hasMatch(p.basename(f.path))) continue;
+        if (owned.owns(f.path, f.readAsBytesSync())) {
+          if (f.path != g.path) stale.add(f.path);
+        } else if (replace) {
+          stale.add(f.path);
+        } else {
+          foreign.add(p.relative(f.path));
+        }
+      }
+    }
+    if (foreign.isNotEmpty) {
+      throw BrandifyException('These feature graphics would be replaced, but brandify did not write them '
+          '(or they changed since):\n${foreign.map((l) => '  - $l').join('\n')}\n'
+          'Move them out, or run `brandify export --replace` to delete them.');
+    }
+    return stale;
+  }
+
+  void _writeFeatureGraphic(({FeatureGraphicItem item, String path}) g) {
+    var bytes = File(g.item.out).readAsBytesSync();
+    if (pngHasAlpha(bytes)) {
+      final flat = flattenOpaquePng(bytes);
+      if (flat == null) {
+        throw BrandifyException('[${g.item.locale}] the feature graphic has transparent pixels; '
+            'Google Play needs it opaque. Use an opaque feature_graphic.background.');
+      }
+      bytes = flat;
+    }
+    File(g.path)
+      ..parent.createSync(recursive: true)
+      ..writeAsBytesSync(bytes);
+  }
+
+  void _verifyFeatureGraphics(List<({FeatureGraphicItem item, String path})> graphics) {
+    final problems = <String>[];
+    for (final g in graphics) {
+      final bytes = File(g.path).readAsBytesSync();
+      final size = pngSize(bytes);
+      if (size == null || size.width != playFeatureGraphicWidth || size.height != playFeatureGraphicHeight) {
+        problems.add('${p.relative(g.path)} is not a $playFeatureGraphicWidth×$playFeatureGraphicHeight PNG');
+      } else if (pngHasAlpha(bytes)) {
+        problems.add('${p.relative(g.path)} has an alpha channel, which Google Play rejects');
+      }
+    }
+    if (problems.isNotEmpty) {
+      throw BrandifyException('Exported feature graphics break store rules:\n'
+          '${problems.map((l) => '  - $l').join('\n')}');
+    }
   }
 
   // -- planning --------------------------------------------------------------

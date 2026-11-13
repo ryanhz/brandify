@@ -37,6 +37,7 @@ const appStoreFields = [
   MetadataField('subtitle', 'subtitle.txt', 30),
   MetadataField('description', 'description.txt', 4000, required: true),
   MetadataField('keywords', 'keywords.txt', 100, bytes: true),
+  MetadataField('promotional_text', 'promotional_text.txt', 170),
   MetadataField('release_notes', 'release_notes.txt', 4000, label: "What's New"),
 ];
 
@@ -49,6 +50,36 @@ const playFields = [
 ];
 
 List<MetadataField> fieldsOf(Store store) => store == Store.play ? playFields : appStoreFields;
+
+/// deliver files filled from `app_store:`: `app_store.<key>` -> path under
+/// `<fastlane>/metadata/`, where `{locale}` is every App Store locale folder.
+const appStoreFiles = {
+  'primary_category': 'primary_category.txt',
+  'secondary_category': 'secondary_category.txt',
+  'copyright': 'copyright.txt',
+  'support_url': '{locale}/support_url.txt',
+  'privacy_url': '{locale}/privacy_url.txt',
+  'marketing_url': '{locale}/marketing_url.txt',
+  'review.first_name': 'review_information/first_name.txt',
+  'review.last_name': 'review_information/last_name.txt',
+  'review.email': 'review_information/email_address.txt',
+  'review.phone': 'review_information/phone_number.txt',
+  'review.demo_user': 'review_information/demo_user.txt',
+  'review.demo_password': 'review_information/demo_password.txt',
+  'review.notes': 'review_information/notes.txt',
+};
+
+/// Longest App Review notes App Store Connect takes.
+const reviewNotesMax = 4000;
+
+/// What App Store Connect needs from `app_store:` before a submission and
+/// brandify.yaml doesn't give: `app_store.<key>` names. Empty when ready.
+List<String> appStoreGaps(AppStoreConfig? a) => [
+      for (final k in ['primary_category', 'copyright', 'support_url', 'privacy_url'])
+        if (a == null || !a.values.containsKey(k)) 'app_store.$k',
+      for (final k in AppStoreConfig.reviewContactKeys)
+        if (a == null || !a.review.containsKey(k)) 'app_store.review.$k',
+    ];
 
 /// A text file to write.
 class MetadataFile {
@@ -74,10 +105,14 @@ class MetadataFile {
 /// deleted, so the store doesn't keep the old text. Other files in those
 /// folders are never touched.
 class MetadataWriter {
-  MetadataWriter({required this.config, required this.logger, this.versionCode});
+  MetadataWriter({required this.config, required this.logger, this.versionCode, Map<String, String>? env})
+      : env = env ?? brandifyEnv(config.root);
 
   final BrandifyConfig config;
   final Logger logger;
+
+  /// Where `${NAME}` in `app_store:` is read from: the environment, then `.env`.
+  final Map<String, String> env;
 
   /// Play changelog file name; read from pubspec.yaml's `version` (`1.2.0+42`)
   /// when null.
@@ -132,12 +167,18 @@ class MetadataWriter {
 
     final byFolder = <(String, Store), List<MetadataFile>>{};
     for (final f in plan) {
+      if (f.locale.isEmpty) continue;
       byFolder.putIfAbsent((f.locale, f.store), () => []).add(f);
     }
     for (final MapEntry(key: (locale, store), value: files) in byFolder.entries) {
       final changed = files.where(toWrite.contains).length;
       logger.info('[$locale] ${store.label} ${files.first.storeLocale}: ${files.length} files '
           '($changed changed) -> ${p.relative(_folder(store, files.first.storeLocale))}');
+    }
+    final shared = plan.where((f) => f.locale.isEmpty).toList();
+    if (shared.isNotEmpty) {
+      logger.info('App Store app_store: ${shared.length} files '
+          '(${shared.where(toWrite.contains).length} changed) -> ${p.relative(p.join(config.fastlaneDir, 'metadata'))}');
     }
     for (final d in deleted) {
       logger.info('removed ${p.relative(d)} (its field is now empty)');
@@ -200,14 +241,41 @@ class MetadataWriter {
             plan.add(MetadataFile(locale, store, code, path, value));
           }
         }
+        if (store == Store.appStore) {
+          for (final MapEntry(key: key, value: file) in appStoreFiles.entries) {
+            if (!file.startsWith('{locale}/')) continue;
+            _addAppStoreFile(plan, obsolete, key, p.join(folder, p.basename(file)),
+                locale: locale, code: code);
+          }
+        }
+      }
+    }
+    // Not per locale: written whenever the App Store is, and only once all
+    // locales are (a `-l` run leaves them alone).
+    if (wantStores.contains(Store.appStore) && (locales == null || locales.isEmpty)) {
+      for (final MapEntry(key: key, value: file) in appStoreFiles.entries) {
+        if (file.startsWith('{locale}/')) continue;
+        _addAppStoreFile(plan, obsolete, key, p.join(config.fastlaneDir, 'metadata', file));
       }
     }
     return (plan, obsolete);
   }
 
+  void _addAppStoreFile(List<MetadataFile> plan, List<String> obsolete, String key, String path,
+      {String locale = '', String code = ''}) {
+    final raw = config.appStore?.values[key];
+    if (raw == null) {
+      obsolete.add(path);
+    } else {
+      plan.add(MetadataFile(locale, Store.appStore, code, path, expandEnv(raw, env, [])));
+    }
+  }
+
   /// Every missing required field and every text over its store's limit,
   /// as one line each. Empty when [stores] can be written.
-  List<String> validate({required Set<Store> stores, Set<String>? locales}) {
+  ///
+  /// [includeAppStore]: also the `app_store:` problems ([appStoreProblems]).
+  List<String> validate({required Set<Store> stores, Set<String>? locales, bool includeAppStore = true}) {
     final problems = <String>[];
     for (final MapEntry(key: locale, value: m) in config.metadata.entries) {
       if (!_selected(locale, locales)) continue;
@@ -228,6 +296,30 @@ class MetadataWriter {
                 '${store.label} takes at most ${f.max}${f.label == null ? '' : ' for its ${f.label}'}');
           }
         }
+      }
+    }
+    if (includeAppStore && stores.contains(Store.appStore)) problems.addAll(appStoreProblems());
+    return problems;
+  }
+
+  /// `app_store:` values that can't be written: a `${NAME}` that isn't set,
+  /// a URL that isn't one once expanded, notes that are too long.
+  List<String> appStoreProblems() {
+    final problems = <String>[];
+    for (final MapEntry(:key, :value) in (config.appStore?.values ?? const <String, String>{}).entries) {
+      final unset = <String>[];
+      final v = expandEnv(value, env, unset);
+      if (unset.isNotEmpty) {
+        problems.add('`app_store.$key` uses ${unset.map((n) => '\${$n}').join(', ')}, '
+            '${unset.length == 1 ? 'which is' : 'which are'} not set in the environment');
+        continue;
+      }
+      if (key.endsWith('_url') && !RegExp(r'^https?://\S+$').hasMatch(v)) {
+        problems.add('`app_store.$key` is "$v" once expanded, not a URL starting with https://');
+      }
+      if (key == 'review.notes' && v.runes.length > reviewNotesMax) {
+        problems.add('`app_store.review.notes` is ${v.runes.length} characters; App Store Connect '
+            'takes at most $reviewNotesMax');
       }
     }
     return problems;
