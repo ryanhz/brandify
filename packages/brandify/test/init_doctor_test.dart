@@ -196,6 +196,22 @@ void main() {
       expect(out.lines.last, '3 problems to fix before capturing.');
     });
 
+    test('fastlane from a Gemfile runs through bundle exec', () async {
+      project();
+      write('Gemfile', 'source "https://rubygems.org"\n\ngem "fastlane"\n');
+      Check fastlane(List<Check> cs) => cs.singleWhere((c) => c.title.startsWith('fastlane'));
+      Handler bundle({required bool installed}) => (exe, args) => [exe, ...args].join(' ') ==
+              'bundle exec fastlane --version'
+          ? (installed ? ok('fastlane 2.234.0\n') : failed('Could not find gem fastlane'))
+          : tools()(exe, args); // global fastlane is absent
+
+      final found = fastlane(await doctor(bundle(installed: true)));
+      expect((found.status, found.title), (CheckStatus.ok, 'fastlane 2.234.0 (bundle exec, from the Gemfile)'));
+
+      final missing = fastlane(await doctor(bundle(installed: false)));
+      expect((missing.status, missing.hint), (CheckStatus.warn, 'Run `bundle install` next to brandify.yaml.'));
+    });
+
     test('iOS devices on Linux are a warning, not a failure', () async {
       project();
       final cs = await doctor(tools(), mac: false);

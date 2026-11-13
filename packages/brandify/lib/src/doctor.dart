@@ -111,9 +111,9 @@ class Doctor {
 
   /// Runs a tool; null when it can't be started at all.
   Future<CommandResult?> _try(String exe, List<String> args,
-      {Duration timeout = const Duration(seconds: 60)}) async {
+      {Duration timeout = const Duration(seconds: 60), String? workingDirectory}) async {
     try {
-      return await runner.run(exe, args, timeout: timeout);
+      return await runner.run(exe, args, timeout: timeout, workingDirectory: workingDirectory);
     } on BrandifyException {
       return null;
     }
@@ -423,14 +423,31 @@ class Doctor {
   // -- fastlane (optional) ---------------------------------------------------
 
   Future<Check> _fastlane() async {
-    final r = await _try('fastlane', ['--version']);
-    final version = r == null ? null : RegExp(r'fastlane (\d+\.\d+\.\d+)').firstMatch(r.stdout)?.group(1);
-    if (r == null || r.exitCode != 0 || version == null) {
+    // A Gemfile next to brandify.yaml that lists fastlane wins: it runs with
+    // `bundle exec`, often from vendor/bundle, and isn't on PATH.
+    final gemfile = File(p.join(_root, 'Gemfile'));
+    final bundled = gemfile.existsSync() &&
+        RegExp(r'''^\s*gem\s+['"]fastlane['"]''', multiLine: true).hasMatch(gemfile.readAsStringSync());
+    if (bundled) {
+      final version = _fastlaneVersion(
+          await _try('bundle', ['exec', 'fastlane', '--version'], workingDirectory: _root));
+      if (version == null) {
+        return Check(CheckStatus.warn, 'fastlane: in the Gemfile but not installed',
+            hint: 'Run `bundle install` next to brandify.yaml.');
+      }
+      return Check(CheckStatus.ok, 'fastlane $version (bundle exec, from the Gemfile)');
+    }
+    final version = _fastlaneVersion(await _try('fastlane', ['--version']));
+    if (version == null) {
       return Check(CheckStatus.skip, 'fastlane not found (optional)',
-          hint: 'Only needed to upload what `brandify export` writes (supply, deliver).');
+          hint: 'Only needed to upload what `brandify export` writes (supply, deliver). Install it, or add '
+              '`gem "fastlane"` to a Gemfile next to brandify.yaml and run `bundle install`.');
     }
     return Check(CheckStatus.ok, 'fastlane $version');
   }
+
+  static String? _fastlaneVersion(CommandResult? r) =>
+      r == null || r.exitCode != 0 ? null : RegExp(r'fastlane (\d+\.\d+\.\d+)').firstMatch(r.stdout)?.group(1);
 }
 
 /// AVD names from `emulator -list-avds` (which can mix in `INFO |` lines).
